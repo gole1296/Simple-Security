@@ -1,0 +1,99 @@
+/*!
+ * Copyright (C) Microsoft Corporation. All rights reserved.
+ * This file is auto-generated. Do not modify it manually.
+ * Changes to this file may be overwritten.
+ */
+
+export const dataSourcesInfo = {
+  "businessunits": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "businessunitid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "fieldpermissions": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "fieldpermissionid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "fieldsecurityprofiles": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "fieldsecurityprofileid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "principalobjectattributeaccessset": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "principalobjectattributeaccessid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "principalobjectaccessset": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "principalobjectaccessid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "privileges": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "privilegeid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "roles": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "roleid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "systemuserrolescollection": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "systemuserroleid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "teammemberships": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "teammembershipid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "teamrolescollection": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "teamroleid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "teams": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "teamid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "teamtemplates": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "teamtemplateid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "systemusers": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "systemuserid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  }
+};

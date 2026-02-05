@@ -1,0 +1,409 @@
+{
+  "name": "privilege",
+  "title": "Privileges",
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "x-ms-dataverse-entity": true,
+      "x-ms-dataverse-entityset": "privileges",
+      "x-ms-dataverse-primary-id": "privilegeid",
+      "x-ms-dataverse-primary-name": "name",
+      "properties": {
+        "accessright": {
+          "type": "string",
+          "title": "accessright",
+          "x-ms-dataverse-attribute": "accessright",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "AccessRight"
+        },
+        "canbebasic": {
+          "type": "string",
+          "title": "canbebasic",
+          "x-ms-dataverse-attribute": "canbebasic",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "CanBeBasic",
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "e5d2df60-e8a2-47d8-bbc3-a1643015e86b",
+          "x-ms-isGlobal": false,
+          "x-ms-optionSetType": "Boolean"
+        },
+        "canbebasicname": {
+          "type": "string",
+          "title": "canbebasicname",
+          "x-ms-dataverse-attribute": "canbebasicname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "CanBeBasicName",
+          "x-ms-read-only": true
+        },
+        "canbedeep": {
+          "type": "string",
+          "title": "canbedeep",
+          "x-ms-dataverse-attribute": "canbedeep",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "CanBeDeep",
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "944ec5a3-f435-4899-b78f-6320f9ce4c56",
+          "x-ms-isGlobal": false,
+          "x-ms-optionSetType": "Boolean"
+        },
+        "canbedeepname": {
+          "type": "string",
+          "title": "canbedeepname",
+          "x-ms-dataverse-attribute": "canbedeepname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "CanBeDeepName",
+          "x-ms-read-only": true
+        },
+        "canbeentityreference": {
+          "type": "string",
+          "title": "canbeentityreference",
+          "x-ms-dataverse-attribute": "canbeentityreference",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "CanBeEntityReference",
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "cd5a2043-c138-4e1c-8ad2-f741622e0e17",
+          "x-ms-isGlobal": false,
+          "x-ms-optionSetType": "Boolean"
+        },
+        "canbeentityreferencename": {
+          "type": "string",
+          "title": "canbeentityreferencename",
+          "x-ms-dataverse-attribute": "canbeentityreferencename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "CanBeEntityReferenceName",
+          "x-ms-read-only": true
+        },
+        "canbeglobal": {
+          "type": "string",
+          "title": "canbeglobal",
+          "x-ms-dataverse-attribute": "canbeglobal",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "CanBeGlobal",
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "9d89ab71-f3b3-495b-b69b-3b17590392ba",
+          "x-ms-isGlobal": false,
+          "x-ms-optionSetType": "Boolean"
+        },
+        "canbeglobalname": {
+          "type": "string",
+          "title": "canbeglobalname",
+          "x-ms-dataverse-attribute": "canbeglobalname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "CanBeGlobalName",
+          "x-ms-read-only": true
+        },
+        "canbelocal": {
+          "type": "string",
+          "title": "canbelocal",
+          "x-ms-dataverse-attribute": "canbelocal",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "CanBeLocal",
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "81a01d02-8f27-4091-a6c7-7b58b2dfe0d2",
+          "x-ms-isGlobal": false,
+          "x-ms-optionSetType": "Boolean"
+        },
+        "canbelocalname": {
+          "type": "string",
+          "title": "canbelocalname",
+          "x-ms-dataverse-attribute": "canbelocalname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "CanBeLocalName",
+          "x-ms-read-only": true
+        },
+        "canbeparententityreference": {
+          "type": "string",
+          "title": "canbeparententityreference",
+          "x-ms-dataverse-attribute": "canbeparententityreference",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "CanBeParentEntityReference",
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "ad86c649-1c10-4a92-90ef-93a4bcd7423c",
+          "x-ms-isGlobal": false,
+          "x-ms-optionSetType": "Boolean"
+        },
+        "canbeparententityreferencename": {
+          "type": "string",
+          "title": "canbeparententityreferencename",
+          "x-ms-dataverse-attribute": "canbeparententityreferencename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "CanBeParentEntityReferenceName",
+          "x-ms-read-only": true
+        },
+        "canberecordfilter": {
+          "type": "string",
+          "title": "Can Be Record Filter",
+          "x-ms-dataverse-attribute": "canberecordfilter",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "CanBeRecordFilter",
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "5a8fc1b8-d1fd-f011-8406-6045bd095325",
+          "x-ms-isGlobal": false,
+          "x-ms-optionsetdisplayname": "CanBeRecordFilter",
+          "x-ms-optionSetType": "Boolean"
+        },
+        "canberecordfiltername": {
+          "type": "string",
+          "title": "canberecordfiltername",
+          "x-ms-dataverse-attribute": "canberecordfiltername",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "canberecordfilterName",
+          "x-ms-read-only": true
+        },
+        "componentstate": {
+          "type": "string",
+          "title": "Component State",
+          "x-ms-dataverse-attribute": "componentstate",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "ComponentState",
+          "x-ms-read-only": true,
+          "required": true,
+          "enum": [
+            "Published",
+            "Unpublished",
+            "Deleted",
+            "Deleted Unpublished"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "Color": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "faece09f-cefc-11de-8150-00155da18b00",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "Component State",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "introducedversion": {
+          "type": "string",
+          "title": "Introduced Version",
+          "x-ms-dataverse-attribute": "introducedversion",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "IntroducedVersion",
+          "maxLength": 48
+        },
+        "iscustomizable": {
+          "type": "string",
+          "title": "Customizable",
+          "x-ms-dataverse-attribute": "iscustomizable",
+          "x-ms-dataverse-type": "ManagedPropertyType",
+          "x-ms-schema-name": "IsCustomizable",
+          "required": true
+        },
+        "isdisabledwhenintegrated": {
+          "type": "string",
+          "title": "isdisabledwhenintegrated",
+          "x-ms-dataverse-attribute": "isdisabledwhenintegrated",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "IsDisabledWhenIntegrated",
+          "x-ms-read-only": true,
+          "required": true,
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "8c945621-efa5-4ff7-9774-e43a5a456445",
+          "x-ms-isGlobal": false,
+          "x-ms-optionSetType": "Boolean"
+        },
+        "ismanaged": {
+          "type": "string",
+          "title": "State",
+          "x-ms-dataverse-attribute": "ismanaged",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "IsManaged",
+          "x-ms-read-only": true,
+          "required": true,
+          "enum": [
+            "Unmanaged",
+            "Managed"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "9d04e035-5408-4c1d-a5aa-20445a02f691",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "Is Component Managed",
+          "x-ms-optionSetType": "Boolean"
+        },
+        "ismanagedname": {
+          "type": "string",
+          "title": "ismanagedname",
+          "x-ms-dataverse-attribute": "ismanagedname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "IsManagedName",
+          "x-ms-read-only": true
+        },
+        "name": {
+          "type": "string",
+          "title": "name",
+          "x-ms-dataverse-attribute": "name",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "Name",
+          "x-ms-dataverse-primary-name": true,
+          "maxLength": 256
+        },
+        "overwritetime": {
+          "type": "string",
+          "title": "Record Overwrite Time",
+          "x-ms-dataverse-attribute": "overwritetime",
+          "x-ms-dataverse-type": "DateTimeType",
+          "x-ms-schema-name": "OverwriteTime",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "privilegeid": {
+          "type": "string",
+          "title": "privilegeid",
+          "x-ms-dataverse-attribute": "privilegeid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "PrivilegeId",
+          "x-ms-dataverse-primary-id": true,
+          "required": true,
+          "x-ms-keyType": "primary"
+        },
+        "privilegerowid": {
+          "type": "string",
+          "title": "App Module Unique Id",
+          "x-ms-dataverse-attribute": "privilegerowid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "PrivilegeRowId",
+          "required": true
+        },
+        "solutionid": {
+          "type": "string",
+          "title": "Solution",
+          "x-ms-dataverse-attribute": "solutionid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "SolutionId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "supportingsolutionid": {
+          "type": "string",
+          "title": "Solution",
+          "x-ms-dataverse-attribute": "supportingsolutionid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "SupportingSolutionId",
+          "x-ms-read-only": true
+        },
+        "versionnumber": {
+          "type": "string",
+          "title": "versionnumber",
+          "x-ms-dataverse-attribute": "versionnumber",
+          "x-ms-dataverse-type": "BigIntType",
+          "x-ms-schema-name": "VersionNumber",
+          "x-ms-read-only": true
+        }
+      },
+      "required": [
+        "componentstate",
+        "iscustomizable",
+        "isdisabledwhenintegrated",
+        "ismanaged",
+        "overwritetime",
+        "privilegeid",
+        "privilegerowid",
+        "solutionid"
+      ]
+    }
+  }
+}

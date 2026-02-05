@@ -1,0 +1,164 @@
+{
+  "name": "principalobjectattributeaccess",
+  "title": "Field Sharing",
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "x-ms-dataverse-entity": true,
+      "x-ms-dataverse-entityset": "principalobjectattributeaccessset",
+      "x-ms-dataverse-primary-id": "principalobjectattributeaccessid",
+      "x-ms-dataverse-primary-name": null,
+      "properties": {
+        "attributeid": {
+          "type": "string",
+          "title": "Secured field",
+          "x-ms-dataverse-attribute": "attributeid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "AttributeId",
+          "required": true
+        },
+        "objectid": {
+          "type": "string",
+          "title": "Entity instance",
+          "x-ms-dataverse-attribute": "objectid",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "ObjectId",
+          "required": true
+        },
+        "objecttypecode": {
+          "type": "string",
+          "title": "Entity object type",
+          "x-ms-dataverse-attribute": "objecttypecode",
+          "x-ms-dataverse-type": "EntityNameType",
+          "x-ms-schema-name": "ObjectTypeCode",
+          "required": true
+        },
+        "organizationid": {
+          "type": "string",
+          "title": "Organization",
+          "x-ms-dataverse-attribute": "organizationid",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "OrganizationId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "organizationidname": {
+          "type": "string",
+          "title": "organizationidname",
+          "x-ms-dataverse-attribute": "organizationidname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "OrganizationIdName",
+          "x-ms-read-only": true,
+          "required": true,
+          "maxLength": 160
+        },
+        "principalid": {
+          "type": "string",
+          "title": "Principal",
+          "x-ms-dataverse-attribute": "principalid",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "PrincipalId",
+          "required": true
+        },
+        "principalidname": {
+          "type": "string",
+          "title": "principalidname",
+          "x-ms-dataverse-attribute": "principalidname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "PrincipalIdName",
+          "x-ms-read-only": true,
+          "required": true,
+          "maxLength": 160
+        },
+        "principalidtype": {
+          "type": "string",
+          "title": "Principal type",
+          "x-ms-dataverse-attribute": "principalidtype",
+          "x-ms-dataverse-type": "EntityNameType",
+          "x-ms-schema-name": "PrincipalIdType",
+          "required": true
+        },
+        "principalobjectattributeaccessid": {
+          "type": "string",
+          "title": "Shared secured field",
+          "x-ms-dataverse-attribute": "principalobjectattributeaccessid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "PrincipalObjectAttributeAccessId",
+          "x-ms-dataverse-primary-id": true,
+          "required": true,
+          "x-ms-keyType": "primary"
+        },
+        "readaccess": {
+          "type": "string",
+          "title": "Read permission",
+          "x-ms-dataverse-attribute": "readaccess",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "ReadAccess",
+          "required": true,
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "6158a6e8-bbd0-de11-0015-00137299e1c2",
+          "x-ms-isGlobal": false,
+          "x-ms-optionsetdisplayname": "ReadAccess",
+          "x-ms-optionSetType": "Boolean"
+        },
+        "updateaccess": {
+          "type": "string",
+          "title": "Update permission",
+          "x-ms-dataverse-attribute": "updateaccess",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "UpdateAccess",
+          "required": true,
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "6358a6e8-bbd0-de11-0015-00137299e1c2",
+          "x-ms-isGlobal": false,
+          "x-ms-optionsetdisplayname": "UpdateAccess",
+          "x-ms-optionSetType": "Boolean"
+        },
+        "versionnumber": {
+          "type": "string",
+          "title": "versionnumber",
+          "x-ms-dataverse-attribute": "versionnumber",
+          "x-ms-dataverse-type": "BigIntType",
+          "x-ms-schema-name": "VersionNumber",
+          "x-ms-read-only": true
+        }
+      },
+      "required": [
+        "attributeid",
+        "objectid",
+        "objecttypecode",
+        "organizationid",
+        "organizationidname",
+        "principalid",
+        "principalidname",
+        "principalidtype",
+        "principalobjectattributeaccessid",
+        "readaccess",
+        "updateaccess"
+      ]
+    }
+  }
+}

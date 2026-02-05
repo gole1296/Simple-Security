@@ -1,0 +1,57 @@
+{
+  "name": "teammembership",
+  "title": "teammembership",
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "x-ms-dataverse-entity": true,
+      "x-ms-dataverse-entityset": "teammemberships",
+      "x-ms-dataverse-primary-id": "teammembershipid",
+      "x-ms-dataverse-primary-name": null,
+      "properties": {
+        "systemuserid": {
+          "type": "string",
+          "title": "systemuserid",
+          "x-ms-dataverse-attribute": "systemuserid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "SystemUserId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "teamid": {
+          "type": "string",
+          "title": "teamid",
+          "x-ms-dataverse-attribute": "teamid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "TeamId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "teammembershipid": {
+          "type": "string",
+          "title": "teammembershipid",
+          "x-ms-dataverse-attribute": "teammembershipid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "TeamMembershipId",
+          "x-ms-dataverse-primary-id": true,
+          "required": true,
+          "x-ms-keyType": "primary"
+        },
+        "versionnumber": {
+          "type": "string",
+          "title": "versionnumber",
+          "x-ms-dataverse-attribute": "versionnumber",
+          "x-ms-dataverse-type": "BigIntType",
+          "x-ms-schema-name": "VersionNumber",
+          "x-ms-read-only": true
+        }
+      },
+      "required": [
+        "systemuserid",
+        "teamid",
+        "teammembershipid"
+      ]
+    }
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "name": "principalobjectaccess",
+  "title": "principalobjectaccess",
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "x-ms-dataverse-entity": true,
+      "x-ms-dataverse-entityset": "principalobjectaccessset",
+      "x-ms-dataverse-primary-id": "principalobjectaccessid",
+      "x-ms-dataverse-primary-name": null,
+      "properties": {
+        "accessrightsmask": {
+          "type": "string",
+          "title": "accessrightsmask",
+          "x-ms-dataverse-attribute": "accessrightsmask",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "AccessRightsMask"
+        },
+        "changedon": {
+          "type": "string",
+          "title": "changedon",
+          "x-ms-dataverse-attribute": "changedon",
+          "x-ms-dataverse-type": "DateTimeType",
+          "x-ms-schema-name": "ChangedOn"
+        },
+        "inheritedaccessrightsmask": {
+          "type": "string",
+          "title": "inheritedaccessrightsmask",
+          "x-ms-dataverse-attribute": "inheritedaccessrightsmask",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "InheritedAccessRightsMask",
+          "required": true
+        },
+        "objectid": {
+          "type": "string",
+          "title": "objectid",
+          "x-ms-dataverse-attribute": "objectid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "ObjectId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "objecttypecode": {
+          "type": "string",
+          "title": "objecttypecode",
+          "x-ms-dataverse-attribute": "objecttypecode",
+          "x-ms-dataverse-type": "EntityNameType",
+          "x-ms-schema-name": "ObjectTypeCode",
+          "required": true,
+          "enum": [],
+          "x-ms-enum-values": [],
+          "Color": [],
+          "x-ms-optionsetmetadataid": "1c119653-bd20-4870-9ec6-b2a46f183ada",
+          "x-ms-isGlobal": false,
+          "x-ms-optionSetType": "Picklist"
+        },
+        "objecttypecodename": {
+          "type": "string",
+          "title": "objecttypecodename",
+          "x-ms-dataverse-attribute": "objecttypecodename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "ObjectTypeCodeName",
+          "x-ms-read-only": true
+        },
+        "principalid": {
+          "type": "string",
+          "title": "principalid",
+          "x-ms-dataverse-attribute": "principalid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "PrincipalId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "principalobjectaccessid": {
+          "type": "string",
+          "title": "principalobjectaccessid",
+          "x-ms-dataverse-attribute": "principalobjectaccessid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "PrincipalObjectAccessId",
+          "x-ms-dataverse-primary-id": true,
+          "required": true,
+          "x-ms-keyType": "primary"
+        },
+        "principaltypecode": {
+          "type": "string",
+          "title": "principaltypecode",
+          "x-ms-dataverse-attribute": "principaltypecode",
+          "x-ms-dataverse-type": "EntityNameType",
+          "x-ms-schema-name": "PrincipalTypeCode",
+          "enum": [],
+          "x-ms-enum-values": [],
+          "Color": [],
+          "x-ms-optionsetmetadataid": "fa7d1dc6-271c-4ded-8833-361a8cad07db",
+          "x-ms-isGlobal": false,
+          "x-ms-optionSetType": "Picklist"
+        },
+        "principaltypecodename": {
+          "type": "string",
+          "title": "principaltypecodename",
+          "x-ms-dataverse-attribute": "principaltypecodename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "PrincipalTypeCodeName",
+          "x-ms-read-only": true
+        },
+        "timezoneruleversionnumber": {
+          "type": "string",
+          "title": "timezoneruleversionnumber",
+          "x-ms-dataverse-attribute": "timezoneruleversionnumber",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "TimeZoneRuleVersionNumber"
+        },
+        "utcconversiontimezonecode": {
+          "type": "string",
+          "title": "utcconversiontimezonecode",
+          "x-ms-dataverse-attribute": "utcconversiontimezonecode",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "UTCConversionTimeZoneCode"
+        },
+        "versionnumber": {
+          "type": "string",
+          "title": "versionnumber",
+          "x-ms-dataverse-attribute": "versionnumber",
+          "x-ms-dataverse-type": "BigIntType",
+          "x-ms-schema-name": "VersionNumber",
+          "x-ms-read-only": true
+        }
+      },
+      "required": [
+        "inheritedaccessrightsmask",
+        "objectid",
+        "objecttypecode",
+        "principalid",
+        "principalobjectaccessid"
+      ]
+    }
+  }
+}
