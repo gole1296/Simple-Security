@@ -62,6 +62,7 @@ type FieldPermissionSummary = {
 type UserDetail = {
   teams: TeamSummary[]
   roles: LabeledRole[]
+  fieldSecurityProfiles: LabeledProfile[]
 }
 
 type RoleDetail = {
@@ -72,6 +73,14 @@ type RoleDetail = {
 type ProfileMemberships = {
   users: LabeledUser[]
   teams: TeamSummary[]
+}
+
+type LabeledProfile = {
+  id: string
+  name: string
+  description?: string
+  source: 'direct' | 'team'
+  teamName?: string
 }
 
 const describeError = (error: unknown) => {
@@ -124,6 +133,22 @@ const readUnmaskedLabel = (value?: string) => {
   }
 }
 
+const userStatusLabel = (value?: string) => {
+  switch (String(value ?? '')) {
+    case '0':
+      return 'Enabled'
+    case '1':
+      return 'Disabled'
+    default:
+      return 'Unknown'
+  }
+}
+
+const getFormattedValue = (record: Record<string, unknown>, field: string) => {
+  const value = record[`${field}@OData.Community.Display.V1.FormattedValue`]
+  return typeof value === 'string' ? value : undefined
+}
+
 const buildOrFilter = (field: string, ids: string[]) =>
   ids.length === 0 ? '' : ids.map((id) => `${field} eq ${id}`).join(' or ')
 
@@ -137,6 +162,9 @@ const uniqueById = <T extends { id: string }>(items: T[]) => {
 }
 
 function App() {
+  const [activeTab, setActiveTab] = useState<'users' | 'teams' | 'roles' | 'profiles'>('users')
+  const [userSearch, setUserSearch] = useState('')
+
   const [users, setUsers] = useState<Systemusers[]>([])
   const [usersSkipToken, setUsersSkipToken] = useState<string | null>(null)
   const [usersLoading, setUsersLoading] = useState(false)
@@ -199,13 +227,57 @@ function App() {
     [profiles, selectedProfileId]
   )
 
+  const getBusinessUnitName = (user: Systemusers) => {
+    const record = user as unknown as Record<string, unknown>
+    return (
+      getFormattedValue(record, '_businessunitid_value') ||
+      (record.businessunitidname as string | undefined) ||
+      user._businessunitid_value ||
+      'Not loaded'
+    )
+  }
+
+  const filteredUsers = useMemo(() => {
+    const term = userSearch.trim().toLowerCase()
+    if (!term) return users
+    return users.filter((user) => {
+      const candidateValues = [
+        user.systemuserid,
+        getBusinessUnitName(user),
+        user.fullname ?? '',
+        user.internalemailaddress ?? '',
+        user.address1_telephone1 ?? '',
+        userStatusLabel(String(user.isdisabled ?? '')),
+      ]
+      return candidateValues.some((value) => value.toLowerCase().includes(term))
+    })
+  }, [users, userSearch])
+
+  const handleTabChange = (tab: 'users' | 'teams' | 'roles' | 'profiles') => {
+    setActiveTab(tab)
+    setSelectedUserId(null)
+    setSelectedTeamId(null)
+    setSelectedRoleId(null)
+    setSelectedProfileId(null)
+    setUserDetail(null)
+    setRoleDetail(null)
+    setProfileMemberships(null)
+  }
+
   const loadUsersPage = async (mode: 'reset' | 'more' = 'reset') => {
     setUsersLoading(true)
     setUsersError(null)
     try {
       const skipToken = mode === 'more' ? usersSkipToken ?? undefined : undefined
       const result = await SystemusersService.getAll({
-        select: ['systemuserid', 'fullname', 'internalemailaddress'],
+        select: [
+          'systemuserid',
+          'fullname',
+          'internalemailaddress',
+          'address1_telephone1',
+          '_businessunitid_value',
+          'isdisabled',
+        ],
         top: PAGE_SIZE,
         skipToken,
       })
@@ -231,7 +303,7 @@ function App() {
     try {
       const skipToken = mode === 'more' ? teamsSkipToken ?? undefined : undefined
       const result = await TeamsService.getAll({
-        select: ['teamid', 'name', 'teamtype'],
+        select: ['teamid', 'name', 'teamtype', 'description'],
         top: PAGE_SIZE,
         skipToken,
       })
@@ -323,7 +395,7 @@ function App() {
     if (ids.length === 0) return [] as Teams[]
     const filter = buildOrFilter('teamid', ids)
     const result = await TeamsService.getAll({
-      select: ['teamid', 'name', 'teamtype'],
+      select: ['teamid', 'name', 'teamtype', 'description'],
       filter,
       top: ids.length,
     })
@@ -337,12 +409,33 @@ function App() {
     if (ids.length === 0) return [] as Systemusers[]
     const filter = buildOrFilter('systemuserid', ids)
     const result = await SystemusersService.getAll({
-      select: ['systemuserid', 'fullname', 'internalemailaddress'],
+      select: [
+        'systemuserid',
+        'fullname',
+        'internalemailaddress',
+        'address1_telephone1',
+        '_businessunitid_value',
+        'isdisabled',
+      ],
       filter,
       top: ids.length,
     })
     if (!result.success) {
       throw new Error(`Unable to load users. ${describeError(result.error)}`)
+    }
+    return result.data
+  }
+
+  const fetchProfilesByIds = async (ids: string[]) => {
+    if (ids.length === 0) return [] as Fieldsecurityprofiles[]
+    const filter = buildOrFilter('fieldsecurityprofileid', ids)
+    const result = await FieldsecurityprofilesService.getAll({
+      select: ['fieldsecurityprofileid', 'name', 'description'],
+      filter,
+      top: ids.length,
+    })
+    if (!result.success) {
+      throw new Error(`Unable to load field security profiles. ${describeError(result.error)}`)
     }
     return result.data
   }
@@ -366,7 +459,7 @@ function App() {
       setUserDetailLoading(true)
       setUserDetailError(null)
       try {
-        const [userRolesResult, teamMembershipsResult] = await Promise.all([
+        const [userRolesResult, teamMembershipsResult, userProfilesResult] = await Promise.all([
           SystemuserrolescollectionService.getAll({
             select: ['roleid', 'systemuserid'],
             filter: `systemuserid eq ${selectedUserId}`,
@@ -374,6 +467,11 @@ function App() {
           }),
           TeammembershipsService.getAll({
             select: ['teamid', 'systemuserid'],
+            filter: `systemuserid eq ${selectedUserId}`,
+            top: RELATIONSHIP_PAGE_SIZE,
+          }),
+          SystemuserprofilescollectionService.getAll({
+            select: ['systemuserid', 'fieldsecurityprofileid'],
             filter: `systemuserid eq ${selectedUserId}`,
             top: RELATIONSHIP_PAGE_SIZE,
           }),
@@ -387,24 +485,53 @@ function App() {
             `Unable to load team memberships. ${describeError(teamMembershipsResult.error)}`
           )
         }
+        if (!userProfilesResult.success) {
+          throw new Error(
+            `Unable to load user field security profiles. ${describeError(userProfilesResult.error)}`
+          )
+        }
 
         const userRoleLinks = userRolesResult.data as Systemuserrolescollection[]
         const memberships = teamMembershipsResult.data as Teammemberships[]
+        const userProfileLinks = userProfilesResult.data as Systemuserprofilescollection[]
         const teamIds = memberships.map((membership) => membership.teamid)
 
-        const teamRolesResult = teamIds.length
-          ? await TeamrolescollectionService.getAll({
-              select: ['roleid', 'teamid'],
-              filter: buildOrFilter('teamid', teamIds),
-              top: RELATIONSHIP_PAGE_SIZE,
-            })
-          : { success: true, data: [] as Teamrolescollection[] }
+        const [teamRolesResult, teamProfilesResult] = await Promise.all([
+          teamIds.length
+            ? TeamrolescollectionService.getAll({
+                select: ['roleid', 'teamid'],
+                filter: buildOrFilter('teamid', teamIds),
+                top: RELATIONSHIP_PAGE_SIZE,
+              })
+            : Promise.resolve({
+                success: true,
+                data: [] as Teamrolescollection[],
+                error: undefined,
+              }),
+          teamIds.length
+            ? TeamprofilescollectionService.getAll({
+                select: ['teamid', 'fieldsecurityprofileid'],
+                filter: buildOrFilter('teamid', teamIds),
+                top: RELATIONSHIP_PAGE_SIZE,
+              })
+            : Promise.resolve({
+                success: true,
+                data: [] as Teamprofilescollection[],
+                error: undefined,
+              }),
+        ])
 
         if (!teamRolesResult.success) {
           throw new Error(`Unable to load team roles. ${describeError(teamRolesResult.error)}`)
         }
+        if (!teamProfilesResult.success) {
+          throw new Error(
+            `Unable to load team field security profiles. ${describeError(teamProfilesResult.error)}`
+          )
+        }
 
         const teamRoleLinks = teamRolesResult.data as Teamrolescollection[]
+        const teamProfileLinks = teamProfilesResult.data as Teamprofilescollection[]
 
         const [directRoles, teams] = await Promise.all([
           fetchRolesByIds(uniqueById(userRoleLinks.map((link) => ({ id: link.roleid }))).map((i) => i.id)),
@@ -415,12 +542,21 @@ function App() {
           uniqueById(teamRoleLinks.map((link) => ({ id: link.roleid }))).map((i) => i.id)
         )
 
+        const profileIds = uniqueById(
+          [...userProfileLinks, ...teamProfileLinks].map((link) => ({ id: link.fieldsecurityprofileid }))
+        ).map((item) => item.id)
+        const profiles = await fetchProfilesByIds(profileIds)
+
         const teamNameById = new Map<string, string>(
           teams.map((team) => [team.teamid, team.name ?? 'Unnamed team'])
         )
 
         const roleNameById = new Map<string, Roles>(
           [...directRoles, ...teamRoles].map((role) => [role.roleid, role])
+        )
+
+        const profileById = new Map<string, Fieldsecurityprofiles>(
+          profiles.map((profile) => [profile.fieldsecurityprofileid, profile])
         )
 
         const labeledDirectRoles: LabeledRole[] = userRoleLinks.map((link) => {
@@ -444,6 +580,27 @@ function App() {
           }
         })
 
+        const labeledDirectProfiles: LabeledProfile[] = userProfileLinks.map((link) => {
+          const profile = profileById.get(link.fieldsecurityprofileid)
+          return {
+            id: link.fieldsecurityprofileid,
+            name: profile?.name ?? 'Unnamed profile',
+            description: profile?.description ?? '',
+            source: 'direct',
+          }
+        })
+
+        const labeledTeamProfiles: LabeledProfile[] = teamProfileLinks.map((link) => {
+          const profile = profileById.get(link.fieldsecurityprofileid)
+          return {
+            id: link.fieldsecurityprofileid,
+            name: profile?.name ?? 'Unnamed profile',
+            description: profile?.description ?? '',
+            source: 'team',
+            teamName: teamNameById.get(link.teamid),
+          }
+        })
+
         const teamSummaries: TeamSummary[] = teams.map((team) => ({
           id: team.teamid,
           name: team.name ?? 'Unnamed team',
@@ -455,6 +612,7 @@ function App() {
         setUserDetail({
           teams: teamSummaries,
           roles: [...labeledDirectRoles, ...labeledTeamRoles],
+          fieldSecurityProfiles: [...labeledDirectProfiles, ...labeledTeamProfiles],
         })
       } catch (error) {
         console.error('[User Detail] Load failed', error)
@@ -765,10 +923,70 @@ function App() {
     }
   }, [selectedProfileId])
 
+  const detailOpen =
+    (activeTab === 'users' && Boolean(selectedUserId)) ||
+    (activeTab === 'teams' && Boolean(selectedTeamId)) ||
+    (activeTab === 'roles' && Boolean(selectedRoleId)) ||
+    (activeTab === 'profiles' && Boolean(selectedProfileId))
+
+  const tabDescriptions: Record<typeof activeTab, string> = {
+    users: 'Pick a user to see direct roles and inherited roles via team membership.',
+    teams: 'Browse teams and drill into administrators and team types.',
+    roles: 'Review assignments for users and teams, including inherited memberships.',
+    profiles: 'Inspect field permissions and profile memberships.',
+  }
+
+  const tabTitles: Record<typeof activeTab, string> = {
+    users: 'System Users',
+    teams: 'Teams',
+    roles: 'Security Roles',
+    profiles: 'Field Security Profiles',
+  }
+
+  const gridConfig = {
+    users: {
+      columns: [
+        { key: 'systemuserid', label: 'System User Id' },
+        { key: 'businessUnit', label: 'Business Unit' },
+        { key: 'fullname', label: 'Full Name' },
+        { key: 'email', label: 'Primary Email' },
+        { key: 'phone', label: 'Business Phone' },
+        { key: 'status', label: 'Status' },
+      ],
+      template: '1.4fr 1.1fr 1.1fr 1.2fr 1fr 0.8fr 140px',
+    },
+    teams: {
+      columns: [
+        { key: 'teamid', label: 'Team Id' },
+        { key: 'name', label: 'Name' },
+        { key: 'description', label: 'Description' },
+      ],
+      template: '1.4fr 1fr 1.4fr 140px',
+    },
+    roles: {
+      columns: [
+        { key: 'roleid', label: 'Role Id' },
+        { key: 'name', label: 'Name' },
+        { key: 'description', label: 'Description' },
+      ],
+      template: '1.4fr 1fr 1.4fr 140px',
+    },
+    profiles: {
+      columns: [
+        { key: 'profileid', label: 'Profile Id' },
+        { key: 'name', label: 'Name' },
+        { key: 'description', label: 'Description' },
+      ],
+      template: '1.4fr 1fr 1.4fr 140px',
+    },
+  } as const
+
+  const gridTemplate = gridConfig[activeTab].template
+
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div>
+      <aside className="side-nav">
+        <div className="side-nav-header">
           <p className="app-eyebrow">Dataverse Security Explorer</p>
           <h1>Simple Security</h1>
           <p className="app-subtitle">
@@ -776,252 +994,419 @@ function App() {
             assignments.
           </p>
         </div>
+        <div className="side-nav-tabs">
+          <button
+            className={`tab-button ${activeTab === 'users' ? 'is-active' : ''}`}
+            onClick={() => handleTabChange('users')}
+          >
+            <span className="tab-title">System Users</span>
+            <span className="tab-meta">Pick a user to see direct roles and inherited roles.</span>
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'teams' ? 'is-active' : ''}`}
+            onClick={() => handleTabChange('teams')}
+          >
+            <span className="tab-title">Teams</span>
+            <span className="tab-meta">Browse team composition and types.</span>
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'roles' ? 'is-active' : ''}`}
+            onClick={() => handleTabChange('roles')}
+          >
+            <span className="tab-title">Security Roles</span>
+            <span className="tab-meta">Audit direct and inherited assignments.</span>
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'profiles' ? 'is-active' : ''}`}
+            onClick={() => handleTabChange('profiles')}
+          >
+            <span className="tab-title">Field Security Profiles</span>
+            <span className="tab-meta">Review memberships and field permissions.</span>
+          </button>
+        </div>
         <div className="app-status">
           <span className="status-dot" />
           Ready for MCP queries
         </div>
-      </header>
+      </aside>
 
-      <main className="app-grid">
-        <section className="panel">
+      <main className="content-area">
+        <section className={`list-panel ${detailOpen ? 'is-shifted' : ''}`}>
           <div className="panel-header">
             <div>
-              <h2>System Users</h2>
-              <p>Pick a user to see direct roles and inherited roles via team membership.</p>
+              <h2>{tabTitles[activeTab]}</h2>
+              <p>{tabDescriptions[activeTab]}</p>
             </div>
-            <button
-              className="ghost-button"
-              onClick={() => loadUsersPage('reset')}
-              disabled={usersLoading}
-            >
-              Refresh
-            </button>
-          </div>
-          <div className="panel-body">
-            <div className="panel-list">
-              {usersError && <div className="notice error">{usersError}</div>}
-              {usersLoading && users.length === 0 ? (
-                <div className="notice">Loading users...</div>
-              ) : (
-                <ul className="list">
-                  {users.map((user) => (
-                    <li key={user.systemuserid}>
-                      <button
-                        className={`list-item ${selectedUserId === user.systemuserid ? 'is-active' : ''}`}
-                        onClick={() => setSelectedUserId(user.systemuserid)}
-                      >
-                        <div>
-                          <span className="list-title">{user.fullname ?? 'Unnamed user'}</span>
-                          <span className="list-meta">{user.internalemailaddress ?? 'No email'}</span>
-                        </div>
-                        <span className="list-tag">User</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="list-actions">
-                <button
-                  className="ghost-button"
-                  onClick={() => loadUsersPage('more')}
-                  disabled={!usersHasMore || usersLoading}
-                >
-                  {usersHasMore ? 'Load more' : 'No more users'}
-                </button>
+            {activeTab === 'users' && (
+              <div className="panel-header-controls">
+                <input
+                  className="filter-input"
+                  type="search"
+                  placeholder="Filter users"
+                  value={userSearch}
+                  onChange={(event) => setUserSearch(event.target.value)}
+                />
               </div>
+            )}
+            {activeTab === 'users' && (
+              <button className="ghost-button" onClick={() => loadUsersPage('reset')} disabled={usersLoading}>
+                Refresh
+              </button>
+            )}
+            {activeTab === 'teams' && (
+              <button className="ghost-button" onClick={() => loadTeamsPage('reset')} disabled={teamsLoading}>
+                Refresh
+              </button>
+            )}
+            {activeTab === 'roles' && (
+              <button className="ghost-button" onClick={() => loadRolesPage('reset')} disabled={rolesLoading}>
+                Refresh
+              </button>
+            )}
+            {activeTab === 'profiles' && (
+              <button className="ghost-button" onClick={() => loadProfilesPage('reset')} disabled={profilesLoading}>
+                Refresh
+              </button>
+            )}
+          </div>
+          <div className="grid-table">
+            <div className="grid-header" style={{ gridTemplateColumns: gridTemplate }}>
+              {gridConfig[activeTab].columns.map((column) => (
+                <span key={column.key}>{column.label}</span>
+              ))}
+              <span></span>
             </div>
-            <div className="panel-detail">
-              {!selectedUser && <div className="notice">Select a user to view relationships.</div>}
-              {selectedUser && (
-                <div className="detail">
-                  <div className="detail-header">
-                    <h3>{selectedUser.fullname ?? 'Unnamed user'}</h3>
-                    <p>{selectedUser.internalemailaddress ?? 'No email address'}</p>
-                  </div>
-                  {userDetailError && <div className="notice error">{userDetailError}</div>}
-                  {userDetailLoading && <div className="notice">Loading relationships...</div>}
-                  {userDetail && (
-                    <>
-                      <div className="detail-section">
-                        <h4>Teams</h4>
-                        {userDetail.teams.length === 0 ? (
-                          <p className="muted">No team memberships.</p>
-                        ) : (
-                          <ul className="detail-list">
-                            {userDetail.teams.map((team) => (
-                              <li key={team.id}>
-                                <span>{team.name}</span>
-                                <span className="detail-meta">
-                                  {team.teamType ? `Type: ${team.teamType}` : 'Team'}
-                                  {team.admin ? ` · Admin: ${team.admin}` : ''}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                      <div className="detail-section">
-                        <h4>Roles</h4>
-                        {userDetail.roles.length === 0 ? (
-                          <p className="muted">No roles assigned.</p>
-                        ) : (
-                          <ul className="detail-list">
-                            {userDetail.roles.map((role, index) => (
-                              <li key={`${role.id}-${index}`}>
-                                <span>{role.name}</span>
-                                <span className={`badge ${role.source === 'direct' ? 'badge-direct' : 'badge-team'}`}>
-                                  {role.source === 'direct' ? 'Direct' : `Via ${role.teamName ?? 'Team'}`}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
+            <div className="grid-body">
+              {activeTab === 'users' && (
+                <>
+                  {usersError && <div className="notice error">{usersError}</div>}
+                  {usersLoading && users.length === 0 && <div className="notice">Loading users...</div>}
+                  {filteredUsers.map((user) => (
+                    <div
+                      className="grid-row"
+                      style={{ gridTemplateColumns: gridTemplate }}
+                      key={user.systemuserid}
+                    >
+                      <span className="grid-cell mono">{user.systemuserid}</span>
+                      <span className="grid-cell">{getBusinessUnitName(user)}</span>
+                      <span className="grid-cell">{user.fullname ?? 'Unnamed user'}</span>
+                      <span className="grid-cell">{user.internalemailaddress ?? 'No email'}</span>
+                      <span className="grid-cell">{user.address1_telephone1 ?? 'Not set'}</span>
+                      <span className="grid-cell">{userStatusLabel(String(user.isdisabled ?? ''))}</span>
+                      <span className="grid-cell action">
+                        <button
+                          className="ghost-button small"
+                          onClick={() => setSelectedUserId(user.systemuserid)}
+                        >
+                          View Details
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </>
               )}
-            </div>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Teams</h2>
-              <p>Browse teams and drill into administrators and team types.</p>
-            </div>
-            <button
-              className="ghost-button"
-              onClick={() => loadTeamsPage('reset')}
-              disabled={teamsLoading}
-            >
-              Refresh
-            </button>
-          </div>
-          <div className="panel-body">
-            <div className="panel-list">
-              {teamsError && <div className="notice error">{teamsError}</div>}
-              {teamsLoading && teams.length === 0 ? (
-                <div className="notice">Loading teams...</div>
-              ) : (
-                <ul className="list">
+              {activeTab === 'teams' && (
+                <>
+                  {teamsError && <div className="notice error">{teamsError}</div>}
+                  {teamsLoading && teams.length === 0 && <div className="notice">Loading teams...</div>}
                   {teams.map((team) => (
-                    <li key={team.teamid}>
-                      <button
-                        className={`list-item ${selectedTeamId === team.teamid ? 'is-active' : ''}`}
-                        onClick={() => setSelectedTeamId(team.teamid)}
-                      >
-                        <div>
-                          <span className="list-title">{team.name ?? 'Unnamed team'}</span>
-                          <span className="list-meta">
-                            {teamTypeLabel(String(team.teamtype ?? ''))}
-                          </span>
-                        </div>
-                        <span className="list-tag">Team</span>
-                      </button>
-                    </li>
+                    <div className="grid-row" style={{ gridTemplateColumns: gridTemplate }} key={team.teamid}>
+                      <span className="grid-cell mono">{team.teamid}</span>
+                      <span className="grid-cell">{team.name ?? 'Unnamed team'}</span>
+                      <span className="grid-cell">{team.description ?? 'No description'}</span>
+                      <span className="grid-cell action">
+                        <button className="ghost-button small" onClick={() => setSelectedTeamId(team.teamid)}>
+                          View Details
+                        </button>
+                      </span>
+                    </div>
                   ))}
-                </ul>
+                </>
               )}
-              <div className="list-actions">
-                <button
-                  className="ghost-button"
-                  onClick={() => loadTeamsPage('more')}
-                  disabled={!teamsHasMore || teamsLoading}
-                >
-                  {teamsHasMore ? 'Load more' : 'No more teams'}
-                </button>
-              </div>
-            </div>
-            <div className="panel-detail">
-              {!selectedTeam && <div className="notice">Select a team to view details.</div>}
-              {selectedTeam && (
-                <div className="detail">
-                  <div className="detail-header">
-                    <h3>{selectedTeam.name ?? 'Unnamed team'}</h3>
-                    <p>{teamTypeLabel(String(selectedTeam.teamtype ?? ''))}</p>
-                  </div>
-                  <div className="detail-section">
-                    <h4>Administrator</h4>
-                    <p className="muted">Not loaded</p>
-                  </div>
-                  <div className="detail-section">
-                    <h4>Business Unit</h4>
-                    <p className="muted">Not loaded</p>
-                  </div>
-                </div>
+              {activeTab === 'roles' && (
+                <>
+                  {rolesError && <div className="notice error">{rolesError}</div>}
+                  {rolesLoading && roles.length === 0 && <div className="notice">Loading roles...</div>}
+                  {roles.map((role) => (
+                    <div className="grid-row" style={{ gridTemplateColumns: gridTemplate }} key={role.roleid}>
+                      <span className="grid-cell mono">{role.roleid}</span>
+                      <span className="grid-cell">{role.name ?? 'Unnamed role'}</span>
+                      <span className="grid-cell">{role.description ?? 'No description'}</span>
+                      <span className="grid-cell action">
+                        <button className="ghost-button small" onClick={() => setSelectedRoleId(role.roleid)}>
+                          View Details
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {activeTab === 'profiles' && (
+                <>
+                  {profilesError && <div className="notice error">{profilesError}</div>}
+                  {profilesLoading && profiles.length === 0 && <div className="notice">Loading profiles...</div>}
+                  {profiles.map((profile) => (
+                    <div
+                      className="grid-row"
+                      style={{ gridTemplateColumns: gridTemplate }}
+                      key={profile.fieldsecurityprofileid}
+                    >
+                      <span className="grid-cell mono">{profile.fieldsecurityprofileid}</span>
+                      <span className="grid-cell">{profile.name ?? 'Unnamed profile'}</span>
+                      <span className="grid-cell">{profile.description ?? 'No description'}</span>
+                      <span className="grid-cell action">
+                        <button
+                          className="ghost-button small"
+                          onClick={() => setSelectedProfileId(profile.fieldsecurityprofileid)}
+                        >
+                          View Details
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
+          </div>
+          <div className="list-actions">
+            {activeTab === 'users' && (
+              <button
+                className="ghost-button"
+                onClick={() => loadUsersPage('more')}
+                disabled={!usersHasMore || usersLoading}
+              >
+                {usersHasMore ? 'Load more' : 'No more users'}
+              </button>
+            )}
+            {activeTab === 'teams' && (
+              <button
+                className="ghost-button"
+                onClick={() => loadTeamsPage('more')}
+                disabled={!teamsHasMore || teamsLoading}
+              >
+                {teamsHasMore ? 'Load more' : 'No more teams'}
+              </button>
+            )}
+            {activeTab === 'roles' && (
+              <button
+                className="ghost-button"
+                onClick={() => loadRolesPage('more')}
+                disabled={!rolesHasMore || rolesLoading}
+              >
+                {rolesHasMore ? 'Load more' : 'No more roles'}
+              </button>
+            )}
+            {activeTab === 'profiles' && (
+              <button
+                className="ghost-button"
+                onClick={() => loadProfilesPage('more')}
+                disabled={!profilesHasMore || profilesLoading}
+              >
+                {profilesHasMore ? 'Load more' : 'No more profiles'}
+              </button>
+            )}
           </div>
         </section>
 
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Security Roles</h2>
-              <p>Review assignments for users and teams, including inherited memberships.</p>
+        <aside className={`detail-panel ${detailOpen ? 'is-open' : ''}`}>
+          {activeTab === 'users' && !selectedUser && (
+            <div className="detail-panel-inner">
+              <div className="notice">Select a user to view details.</div>
             </div>
-            <button
-              className="ghost-button"
-              onClick={() => loadRolesPage('reset')}
-              disabled={rolesLoading}
-            >
-              Refresh
-            </button>
-          </div>
-          <div className="panel-body">
-            <div className="panel-list">
-              {rolesError && <div className="notice error">{rolesError}</div>}
-              {rolesLoading && roles.length === 0 ? (
-                <div className="notice">Loading roles...</div>
-              ) : (
-                <ul className="list">
-                  {roles.map((role) => (
-                    <li key={role.roleid}>
-                      <button
-                        className={`list-item ${selectedRoleId === role.roleid ? 'is-active' : ''}`}
-                        onClick={() => setSelectedRoleId(role.roleid)}
-                      >
-                        <div>
-                          <span className="list-title">{role.name ?? 'Unnamed role'}</span>
-                          <span className="list-meta">{role.description ?? 'No description'}</span>
-                        </div>
-                        <span className="list-tag">Role</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="list-actions">
-                <button
-                  className="ghost-button"
-                  onClick={() => loadRolesPage('more')}
-                  disabled={!rolesHasMore || rolesLoading}
-                >
-                  {rolesHasMore ? 'Load more' : 'No more roles'}
-                </button>
+          )}
+          {activeTab === 'users' && selectedUser && (
+            <div className="detail-panel-inner">
+              <div className="detail">
+                <div className="detail-header">
+                  <h3>{selectedUser.fullname ?? 'Unnamed user'}</h3>
+                  <div className="detail-summary">
+                    <div>
+                      <span className="detail-label">Email</span>
+                      <span>{selectedUser.internalemailaddress ?? 'No email address'}</span>
+                    </div>
+                    <div>
+                      <span className="detail-label">Business Unit</span>
+                      <span>
+                        {getBusinessUnitName(selectedUser)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="detail-label">Status</span>
+                      <span>{userStatusLabel(String(selectedUser.isdisabled ?? ''))}</span>
+                    </div>
+                  </div>
+                </div>
+                {userDetailError && <div className="notice error">{userDetailError}</div>}
+                {userDetailLoading && <div className="notice">Loading relationships...</div>}
+                {userDetail && (
+                  <>
+                    <div className="detail-section">
+                      <h4>Assigned Security Roles</h4>
+                      {userDetail.roles.length === 0 ? (
+                        <p className="muted">No roles assigned.</p>
+                      ) : (
+                        <ul className="detail-list">
+                          {userDetail.roles.map((role, index) => (
+                            <li key={`${role.id}-${index}`}>
+                              <span>{role.name}</span>
+                              <span className={`badge ${role.source === 'direct' ? 'badge-direct' : 'badge-team'}`}>
+                                {role.source === 'direct' ? 'Direct' : `Via ${role.teamName ?? 'Team'}`}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="detail-section">
+                      <h4>Field Security Profiles</h4>
+                      {userDetail.fieldSecurityProfiles.length === 0 ? (
+                        <p className="muted">No field security profiles assigned.</p>
+                      ) : (
+                        <ul className="detail-list">
+                          {userDetail.fieldSecurityProfiles.map((profile, index) => (
+                            <li key={`${profile.id}-${index}`}>
+                              <span>{profile.name}</span>
+                              <span className={`badge ${profile.source === 'direct' ? 'badge-direct' : 'badge-team'}`}>
+                                {profile.source === 'direct' ? 'Direct' : `Via ${profile.teamName ?? 'Team'}`}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="detail-section">
+                      <h4>Team Assignments</h4>
+                      {userDetail.teams.length === 0 ? (
+                        <p className="muted">No team memberships.</p>
+                      ) : (
+                        <ul className="detail-list">
+                          {userDetail.teams.map((team) => (
+                            <li key={team.id}>
+                              <span>{team.name}</span>
+                              <span className="detail-meta">
+                                {team.teamType ? `Type: ${team.teamType}` : 'Team'}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
-            <div className="panel-detail">
-              {!selectedRole && <div className="notice">Select a role to view assignments.</div>}
-              {selectedRole && (
-                <div className="detail">
-                  <div className="detail-header">
-                    <h3>{selectedRole.name ?? 'Unnamed role'}</h3>
-                    <p>{selectedRole.description ?? 'No description'}</p>
+          )}
+
+          {activeTab === 'teams' && !selectedTeam && (
+            <div className="detail-panel-inner">
+              <div className="notice">Select a team to view details.</div>
+            </div>
+          )}
+          {activeTab === 'teams' && selectedTeam && (
+            <div className="detail-panel-inner">
+              <div className="detail">
+                <div className="detail-header">
+                  <h3>{selectedTeam.name ?? 'Unnamed team'}</h3>
+                  <div className="detail-summary">
+                    <div>
+                      <span className="detail-label">Type</span>
+                      <span>{teamTypeLabel(String(selectedTeam.teamtype ?? ''))}</span>
+                    </div>
+                    <div>
+                      <span className="detail-label">Description</span>
+                      <span>{selectedTeam.description ?? 'No description'}</span>
+                    </div>
                   </div>
-                  {roleDetailError && <div className="notice error">{roleDetailError}</div>}
-                  {roleDetailLoading && <div className="notice">Loading assignments...</div>}
-                  {roleDetail && (
+                </div>
+                <p className="muted">Additional team details can be added here.</p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'roles' && !selectedRole && (
+            <div className="detail-panel-inner">
+              <div className="notice">Select a role to view assignments.</div>
+            </div>
+          )}
+          {activeTab === 'roles' && selectedRole && (
+            <div className="detail-panel-inner">
+              <div className="detail">
+                <div className="detail-header">
+                  <h3>{selectedRole.name ?? 'Unnamed role'}</h3>
+                  <p>{selectedRole.description ?? 'No description'}</p>
+                </div>
+                {roleDetailError && <div className="notice error">{roleDetailError}</div>}
+                {roleDetailLoading && <div className="notice">Loading assignments...</div>}
+                {roleDetail && (
+                  <>
+                    <div className="detail-section">
+                      <h4>Teams</h4>
+                      {roleDetail.teams.length === 0 ? (
+                        <p className="muted">No teams assigned.</p>
+                      ) : (
+                        <ul className="detail-list">
+                          {roleDetail.teams.map((team) => (
+                            <li key={team.id}>
+                              <span>{team.name}</span>
+                              <span className="detail-meta">
+                                {team.teamType ? `Type: ${team.teamType}` : 'Team'}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="detail-section">
+                      <h4>Users</h4>
+                      {roleDetail.users.length === 0 ? (
+                        <p className="muted">No users assigned.</p>
+                      ) : (
+                        <ul className="detail-list">
+                          {roleDetail.users.map((user, index) => (
+                            <li key={`${user.id}-${index}`}>
+                              <span>{user.name}</span>
+                              <span className={`badge ${user.source === 'direct' ? 'badge-direct' : 'badge-team'}`}>
+                                {user.source === 'direct' ? 'Direct' : `Via ${user.teamName ?? 'Team'}`}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'profiles' && !selectedProfile && (
+            <div className="detail-panel-inner">
+              <div className="notice">Select a profile to view permissions.</div>
+            </div>
+          )}
+          {activeTab === 'profiles' && selectedProfile && (
+            <div className="detail-panel-inner">
+              <div className="detail">
+                <div className="detail-header">
+                  <h3>{selectedProfile.name ?? 'Unnamed profile'}</h3>
+                  <p>{selectedProfile.description ?? 'No description'}</p>
+                </div>
+                <div className="detail-section">
+                  <h4>Memberships</h4>
+                  {profileMembershipsError && (
+                    <div className="notice error">{profileMembershipsError}</div>
+                  )}
+                  {profileMembershipsLoading ? (
+                    <div className="notice">Loading profile memberships...</div>
+                  ) : profileMemberships ? (
                     <>
                       <div className="detail-section">
                         <h4>Teams</h4>
-                        {roleDetail.teams.length === 0 ? (
+                        {profileMemberships.teams.length === 0 ? (
                           <p className="muted">No teams assigned.</p>
                         ) : (
                           <ul className="detail-list">
-                            {roleDetail.teams.map((team) => (
+                            {profileMemberships.teams.map((team) => (
                               <li key={team.id}>
                                 <span>{team.name}</span>
                                 <span className="detail-meta">
@@ -1034,11 +1419,11 @@ function App() {
                       </div>
                       <div className="detail-section">
                         <h4>Users</h4>
-                        {roleDetail.users.length === 0 ? (
+                        {profileMemberships.users.length === 0 ? (
                           <p className="muted">No users assigned.</p>
                         ) : (
                           <ul className="detail-list">
-                            {roleDetail.users.map((user, index) => (
+                            {profileMemberships.users.map((user, index) => (
                               <li key={`${user.id}-${index}`}>
                                 <span>{user.name}</span>
                                 <span className={`badge ${user.source === 'direct' ? 'badge-direct' : 'badge-team'}`}>
@@ -1050,146 +1435,37 @@ function App() {
                         )}
                       </div>
                     </>
+                  ) : (
+                    <p className="muted">No memberships available.</p>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Field Security Profiles</h2>
-              <p>Inspect field permissions and profile memberships.</p>
-            </div>
-            <button
-              className="ghost-button"
-              onClick={() => loadProfilesPage('reset')}
-              disabled={profilesLoading}
-            >
-              Refresh
-            </button>
-          </div>
-          <div className="panel-body">
-            <div className="panel-list">
-              {profilesError && <div className="notice error">{profilesError}</div>}
-              {profilesLoading && profiles.length === 0 ? (
-                <div className="notice">Loading profiles...</div>
-              ) : (
-                <ul className="list">
-                  {profiles.map((profile) => (
-                    <li key={profile.fieldsecurityprofileid}>
-                      <button
-                        className={`list-item ${
-                          selectedProfileId === profile.fieldsecurityprofileid ? 'is-active' : ''
-                        }`}
-                        onClick={() => setSelectedProfileId(profile.fieldsecurityprofileid)}
-                      >
-                        <div>
-                          <span className="list-title">{profile.name ?? 'Unnamed profile'}</span>
-                          <span className="list-meta">{profile.description ?? 'No description'}</span>
-                        </div>
-                        <span className="list-tag">Profile</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="list-actions">
-                <button
-                  className="ghost-button"
-                  onClick={() => loadProfilesPage('more')}
-                  disabled={!profilesHasMore || profilesLoading}
-                >
-                  {profilesHasMore ? 'Load more' : 'No more profiles'}
-                </button>
+                <div className="detail-section">
+                  <h4>Field Permissions</h4>
+                  {profilePermissionsError && (
+                    <div className="notice error">{profilePermissionsError}</div>
+                  )}
+                  {profilePermissionsLoading ? (
+                    <div className="notice">Loading field permissions...</div>
+                  ) : profilePermissions.length === 0 ? (
+                    <p className="muted">No field permissions found.</p>
+                  ) : (
+                    <ul className="detail-list">
+                      {profilePermissions.map((permission) => (
+                        <li key={permission.id}>
+                          <span>{`${permission.entity}.${permission.attribute}`}</span>
+                          <span className="detail-meta">
+                            Read: {permission.read ?? 'Unknown'} · Update: {permission.update ?? 'Unknown'} ·
+                            Create: {permission.create ?? 'Unknown'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="panel-detail">
-              {!selectedProfile && <div className="notice">Select a profile to view permissions.</div>}
-              {selectedProfile && (
-                <div className="detail">
-                  <div className="detail-header">
-                    <h3>{selectedProfile.name ?? 'Unnamed profile'}</h3>
-                    <p>{selectedProfile.description ?? 'No description'}</p>
-                  </div>
-                  <div className="detail-section">
-                    <h4>Memberships</h4>
-                    {profileMembershipsError && (
-                      <div className="notice error">{profileMembershipsError}</div>
-                    )}
-                    {profileMembershipsLoading ? (
-                      <div className="notice">Loading profile memberships...</div>
-                    ) : profileMemberships ? (
-                      <>
-                        <div className="detail-section">
-                          <h4>Teams</h4>
-                          {profileMemberships.teams.length === 0 ? (
-                            <p className="muted">No teams assigned.</p>
-                          ) : (
-                            <ul className="detail-list">
-                              {profileMemberships.teams.map((team) => (
-                                <li key={team.id}>
-                                  <span>{team.name}</span>
-                                  <span className="detail-meta">
-                                    {team.teamType ? `Type: ${team.teamType}` : 'Team'}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                        <div className="detail-section">
-                          <h4>Users</h4>
-                          {profileMemberships.users.length === 0 ? (
-                            <p className="muted">No users assigned.</p>
-                          ) : (
-                            <ul className="detail-list">
-                              {profileMemberships.users.map((user, index) => (
-                                <li key={`${user.id}-${index}`}>
-                                  <span>{user.name}</span>
-                                  <span className={`badge ${user.source === 'direct' ? 'badge-direct' : 'badge-team'}`}>
-                                    {user.source === 'direct' ? 'Direct' : `Via ${user.teamName ?? 'Team'}`}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <p className="muted">No memberships available.</p>
-                    )}
-                  </div>
-                  <div className="detail-section">
-                    <h4>Field Permissions</h4>
-                    {profilePermissionsError && (
-                      <div className="notice error">{profilePermissionsError}</div>
-                    )}
-                    {profilePermissionsLoading ? (
-                      <div className="notice">Loading field permissions...</div>
-                    ) : profilePermissions.length === 0 ? (
-                      <p className="muted">No field permissions found.</p>
-                    ) : (
-                      <ul className="detail-list">
-                        {profilePermissions.map((permission) => (
-                          <li key={permission.id}>
-                            <span>{`${permission.entity}.${permission.attribute}`}</span>
-                            <span className="detail-meta">
-                              Read: {permission.read ?? 'Unknown'} · Update: {permission.update ?? 'Unknown'} ·
-                              Create: {permission.create ?? 'Unknown'}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
+          )}
+        </aside>
       </main>
     </div>
   )
