@@ -1,5 +1,5 @@
 {
-  "appId": "",
+  "appId": "f4edc6c7-4426-4bb4-ba81-018b70fdfbe7",
   "appDisplayName": "Simple Security",
   "description": null,
   "environmentId": "dd8f6081-3275-efb0-8e21-43ac6419d90a",
@@ -11,62 +11,85 @@
   "connectionReferences": {},
   "databaseReferences": {
     "default.cds": {
+      "databaseDetails": null,
       "dataSources": {
         "users": {
           "entitySetName": "systemusers",
-          "logicalName": "systemuser"
+          "logicalName": "systemuser",
+          "isHidden": false
         },
         "teams": {
           "entitySetName": "teams",
-          "logicalName": "team"
+          "logicalName": "team",
+          "isHidden": false
         },
         "securityroles": {
           "entitySetName": "roles",
-          "logicalName": "role"
+          "logicalName": "role",
+          "isHidden": false
         },
         "teamtemplates": {
           "entitySetName": "teamtemplates",
-          "logicalName": "teamtemplate"
+          "logicalName": "teamtemplate",
+          "isHidden": false
         },
         "principalobjectaccess": {
           "entitySetName": "principalobjectaccessset",
-          "logicalName": "principalobjectaccess"
+          "logicalName": "principalobjectaccess",
+          "isHidden": false
         },
         "fieldsharing": {
           "entitySetName": "principalobjectattributeaccessset",
-          "logicalName": "principalobjectattributeaccess"
+          "logicalName": "principalobjectattributeaccess",
+          "isHidden": false
         },
         "fieldsecurityprofiles": {
           "entitySetName": "fieldsecurityprofiles",
-          "logicalName": "fieldsecurityprofile"
+          "logicalName": "fieldsecurityprofile",
+          "isHidden": false
         },
         "fieldpermissions": {
           "entitySetName": "fieldpermissions",
-          "logicalName": "fieldpermission"
+          "logicalName": "fieldpermission",
+          "isHidden": false
         },
         "businessunits": {
           "entitySetName": "businessunits",
-          "logicalName": "businessunit"
+          "logicalName": "businessunit",
+          "isHidden": false
         },
         "teammembership": {
           "entitySetName": "teammemberships",
-          "logicalName": "teammembership"
+          "logicalName": "teammembership",
+          "isHidden": false
         },
         "systemuserroles": {
           "entitySetName": "systemuserrolescollection",
-          "logicalName": "systemuserroles"
+          "logicalName": "systemuserroles",
+          "isHidden": false
         },
         "teamroles": {
           "entitySetName": "teamrolescollection",
-          "logicalName": "teamroles"
+          "logicalName": "teamroles",
+          "isHidden": false
         },
         "privileges": {
           "entitySetName": "privileges",
-          "logicalName": "privilege"
+          "logicalName": "privilege",
+          "isHidden": false
+        },
+        "systemuserprofiles": {
+          "entitySetName": "systemuserprofilescollection",
+          "logicalName": "systemuserprofiles",
+          "isHidden": false
+        },
+        "teamprofiles": {
+          "entitySetName": "teamprofilescollection",
+          "logicalName": "teamprofiles",
+          "isHidden": false
         }
       },
-      "environmentVariableName": ""
+      "actions": null
     }
-  },
-  "version": "1.0"
+  }
 }

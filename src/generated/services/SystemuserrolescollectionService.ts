@@ -6,7 +6,7 @@
 import type { GetEntityMetadataOptions, EntityMetadata } from '@microsoft/power-apps/data/metadata/dataverse';
 import type { IGetOptions, IGetAllOptions } from '../models/CommonModels';
 import type { IOperationResult } from '@microsoft/power-apps/data';
-import type { SystemuserrolescollectionBase } from '../models/SystemuserrolescollectionModel';
+import type { Systemuserrolescollection } from '../models/SystemuserrolescollectionModel';
 import { dataSourcesInfo } from '../../../.power/schemas/appschemas/dataSourcesInfo';
 import { getClient } from '@microsoft/power-apps/data';
 

@@ -1,0 +1,57 @@
+{
+  "name": "teamprofiles",
+  "title": "Team Profiles",
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "x-ms-dataverse-entity": true,
+      "x-ms-dataverse-entityset": "teamprofilescollection",
+      "x-ms-dataverse-primary-id": "teamprofileid",
+      "x-ms-dataverse-primary-name": null,
+      "properties": {
+        "fieldsecurityprofileid": {
+          "type": "string",
+          "title": "fieldsecurityprofileid",
+          "x-ms-dataverse-attribute": "fieldsecurityprofileid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "FieldSecurityProfileId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "teamid": {
+          "type": "string",
+          "title": "teamid",
+          "x-ms-dataverse-attribute": "teamid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "TeamId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "teamprofileid": {
+          "type": "string",
+          "title": "teamprofileid",
+          "x-ms-dataverse-attribute": "teamprofileid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "TeamProfileId",
+          "x-ms-dataverse-primary-id": true,
+          "required": true,
+          "x-ms-keyType": "primary"
+        },
+        "versionnumber": {
+          "type": "string",
+          "title": "versionnumber",
+          "x-ms-dataverse-attribute": "versionnumber",
+          "x-ms-dataverse-type": "BigIntType",
+          "x-ms-schema-name": "VersionNumber",
+          "x-ms-read-only": true
+        }
+      },
+      "required": [
+        "fieldsecurityprofileid",
+        "teamid",
+        "teamprofileid"
+      ]
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "systemuserprofiles",
+  "title": "systemuserprofiles",
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "x-ms-dataverse-entity": true,
+      "x-ms-dataverse-entityset": "systemuserprofilescollection",
+      "x-ms-dataverse-primary-id": "systemuserprofileid",
+      "x-ms-dataverse-primary-name": null,
+      "properties": {
+        "fieldsecurityprofileid": {
+          "type": "string",
+          "title": "fieldsecurityprofileid",
+          "x-ms-dataverse-attribute": "fieldsecurityprofileid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "FieldSecurityProfileId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "systemuserid": {
+          "type": "string",
+          "title": "systemuserid",
+          "x-ms-dataverse-attribute": "systemuserid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "SystemUserId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "systemuserprofileid": {
+          "type": "string",
+          "title": "systemuserprofileid",
+          "x-ms-dataverse-attribute": "systemuserprofileid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "SystemUserProfileId",
+          "x-ms-dataverse-primary-id": true,
+          "required": true,
+          "x-ms-keyType": "primary"
+        },
+        "versionnumber": {
+          "type": "string",
+          "title": "versionnumber",
+          "x-ms-dataverse-attribute": "versionnumber",
+          "x-ms-dataverse-type": "BigIntType",
+          "x-ms-schema-name": "VersionNumber",
+          "x-ms-read-only": true
+        }
+      },
+      "required": [
+        "fieldsecurityprofileid",
+        "systemuserid",
+        "systemuserprofileid"
+      ]
+    }
+  }
+}
