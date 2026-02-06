@@ -28,6 +28,7 @@ import type { Teamrolescollection } from './generated/models/Teamrolescollection
 import type { Teams } from './generated/models/TeamsModel'
 
 const PAGE_SIZE = 25
+const USER_PAGE_SIZE = 500
 const ROLE_PAGE_SIZE = 200
 const RELATIONSHIP_PAGE_SIZE = 200
 
@@ -480,30 +481,72 @@ function App() {
     setUsersLoading(true)
     setUsersError(null)
     try {
-      const skipToken = mode === 'more' ? usersSkipToken ?? undefined : undefined
-      const filter = applyUserFilters()
-      const result = await SystemusersService.getAll({
-        select: [
-          'systemuserid',
-          'fullname',
-          'internalemailaddress',
-          'address1_telephone1',
-          '_businessunitid_value',
-          '_parentsystemuserid_value',
-          'isdisabled',
-        ],
-        filter,
-        top: PAGE_SIZE,
-        skipToken,
-      })
+      const searchTerm = userSearch.trim()
+      const searchFilter = searchTerm
+        ? `(${[
+            `contains(fullname, '${escapeODataValue(searchTerm)}')`,
+            `contains(internalemailaddress, '${escapeODataValue(searchTerm)}')`,
+            `contains(address1_telephone1, '${escapeODataValue(searchTerm)}')`,
+          ].join(' or ')})`
+        : undefined
+      const filter = applyUserFilters(searchFilter)
 
-      if (!result.success) {
-        throw new Error(`Unable to load users. ${describeError(result.error)}`)
+      if (mode === 'reset' && searchTerm) {
+        let skipToken: string | undefined
+        let allUsers: Systemusers[] = []
+
+        do {
+          const result = await SystemusersService.getAll({
+            select: [
+              'systemuserid',
+              'fullname',
+              'internalemailaddress',
+              'address1_telephone1',
+              '_businessunitid_value',
+              '_parentsystemuserid_value',
+              'isdisabled',
+            ],
+            filter,
+            top: USER_PAGE_SIZE,
+            skipToken,
+          })
+
+          if (!result.success) {
+            throw new Error(`Unable to load users. ${describeError(result.error)}`)
+          }
+
+          allUsers = [...allUsers, ...result.data]
+          skipToken = result.skipToken ?? undefined
+        } while (skipToken)
+
+        setUsers(allUsers)
+        setUsersSkipToken(null)
+        setUsersHasMore(false)
+      } else {
+        const skipToken = mode === 'more' ? usersSkipToken ?? undefined : undefined
+        const result = await SystemusersService.getAll({
+          select: [
+            'systemuserid',
+            'fullname',
+            'internalemailaddress',
+            'address1_telephone1',
+            '_businessunitid_value',
+            '_parentsystemuserid_value',
+            'isdisabled',
+          ],
+          filter,
+          top: USER_PAGE_SIZE,
+          skipToken,
+        })
+
+        if (!result.success) {
+          throw new Error(`Unable to load users. ${describeError(result.error)}`)
+        }
+
+        setUsers((prev) => (mode === 'reset' ? result.data : [...prev, ...result.data]))
+        setUsersSkipToken(result.skipToken ?? null)
+        setUsersHasMore(Boolean(result.skipToken))
       }
-
-      setUsers((prev) => (mode === 'reset' ? result.data : [...prev, ...result.data]))
-      setUsersSkipToken(result.skipToken ?? null)
-      setUsersHasMore(Boolean(result.skipToken))
     } catch (error) {
       console.error('[Users] Load failed', error)
       setUsersError(describeError(error))
@@ -705,6 +748,12 @@ function App() {
       void loadUsersPage('reset')
     }
   }, [hideSystemUsers, userStatusFilter])
+
+  useEffect(() => {
+    if (activeTab === 'users') {
+      void loadUsersPage('reset')
+    }
+  }, [userSearch])
 
   useEffect(() => {
     if (activeTab === 'teams') {
@@ -1014,7 +1063,7 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedTeamId, hideSystemUsers])
+  }, [selectedTeamId, hideSystemUsers, userStatusFilter])
 
   useEffect(() => {
     if (!selectedRoleId) {
@@ -1148,7 +1197,7 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedRoleId, hideSystemUsers])
+  }, [selectedRoleId, hideSystemUsers, userStatusFilter])
 
   useEffect(() => {
     if (!selectedProfileId) {
@@ -1210,7 +1259,7 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedProfileId, hideSystemUsers])
+  }, [selectedProfileId, hideSystemUsers, userStatusFilter])
 
   useEffect(() => {
     if (!selectedProfileId) {
@@ -1498,20 +1547,6 @@ function App() {
                     value={userSearch}
                     onChange={(event) => setUserSearch(event.target.value)}
                   />
-                  <label className="toggle">
-                    <span>Status</span>
-                    <select
-                      className="filter-select"
-                      value={userStatusFilter}
-                      onChange={(event) =>
-                        setUserStatusFilter(event.target.value as 'enabled' | 'disabled' | 'all')
-                      }
-                    >
-                      <option value="enabled">Enabled only</option>
-                      <option value="disabled">Disabled only</option>
-                      <option value="all">All</option>
-                    </select>
-                  </label>
                 </div>
               )}
               {activeTab === 'teams' && (
@@ -1564,6 +1599,20 @@ function App() {
                 </div>
               )}
               <div className="panel-header-actions">
+                <label className="toggle">
+                  <span>User Status</span>
+                  <select
+                    className="filter-select"
+                    value={userStatusFilter}
+                    onChange={(event) =>
+                      setUserStatusFilter(event.target.value as 'enabled' | 'disabled' | 'all')
+                    }
+                  >
+                    <option value="enabled">Enabled only</option>
+                    <option value="disabled">Disabled only</option>
+                    <option value="all">All</option>
+                  </select>
+                </label>
                 <label className="toggle">
                   <input
                     type="checkbox"
