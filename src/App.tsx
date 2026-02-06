@@ -134,17 +134,6 @@ const readUnmaskedLabel = (value?: string) => {
   }
 }
 
-const userStatusLabel = (value?: string) => {
-  switch (String(value ?? '')) {
-    case '0':
-      return 'Enabled'
-    case '1':
-      return 'Disabled'
-    default:
-      return 'Unknown'
-  }
-}
-
 const getFormattedValue = (record: Record<string, unknown>, field: string) => {
   const value = record[`${field}@OData.Community.Display.V1.FormattedValue`]
   return typeof value === 'string' ? value : undefined
@@ -163,6 +152,26 @@ const uniqueById = <T extends { id: string }>(items: T[]) => {
     return true
   })
 }
+
+const getUserDisplayName = (user?: Systemusers) => {
+  if (!user) return 'Unnamed user'
+  const name = (user.fullname ?? '').trim()
+  if (name) return name
+  const email = (user.internalemailaddress ?? '').trim()
+  if (email) return email
+  return 'Unnamed user'
+}
+
+const sortLabeledUsers = (items: LabeledUser[]) =>
+  [...items].sort((a, b) => {
+    const nameCompare = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    if (nameCompare !== 0) return nameCompare
+    const emailCompare = (a.email ?? '').localeCompare(b.email ?? '', undefined, {
+      sensitivity: 'base',
+    })
+    if (emailCompare !== 0) return emailCompare
+    return a.id.localeCompare(b.id)
+  })
 
 function App() {
   const [activeTab, setActiveTab] = useState<'users' | 'teams' | 'roles' | 'profiles'>('users')
@@ -254,12 +263,27 @@ function App() {
     )
   }
 
-  const getUserStatus = (user: Systemusers) => {
+  const isUserDisabled = (user: Systemusers) => {
     const record = user as unknown as Record<string, unknown>
     const formatted = getFormattedValue(record, 'isdisabled')
-    if (formatted === 'Yes') return 'Disabled'
-    if (formatted === 'No') return 'Enabled'
-    return userStatusLabel(String(user.isdisabled ?? ''))
+    if (formatted) {
+      const normalized = formatted.toLowerCase()
+      if (['yes', 'true', 'disabled'].includes(normalized)) return true
+      if (['no', 'false', 'enabled'].includes(normalized)) return false
+    }
+
+    const raw = record.isdisabled as unknown
+    if (typeof raw === 'boolean') return raw
+    if (typeof raw === 'number') return raw === 1
+    if (typeof raw === 'string') return raw === '1' || raw.toLowerCase() === 'true'
+    return false
+  }
+
+  const getUserStatusDisplay = (user: Systemusers) => {
+    const record = user as unknown as Record<string, unknown>
+    const formatted = getFormattedValue(record, 'isdisabled')
+    if (formatted) return formatted
+    return isUserDisabled(user) ? 'Disabled' : 'Enabled'
   }
 
   const getManagerName = (user: Systemusers) => {
@@ -327,9 +351,9 @@ function App() {
   const filteredUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase()
     const base = users.filter((user) => {
-      const status = getUserStatus(user)
+      const disabled = isUserDisabled(user)
       if (userStatusFilter === 'all') return true
-      return userStatusFilter === 'disabled' ? status === 'Disabled' : status === 'Enabled'
+      return userStatusFilter === 'disabled' ? disabled : !disabled
     })
     if (!term) return base
     return base.filter((user) => {
@@ -339,7 +363,7 @@ function App() {
         user.fullname ?? '',
         user.internalemailaddress ?? '',
         user.address1_telephone1 ?? '',
-        getUserStatus(user),
+        getUserStatusDisplay(user),
       ]
       return candidateValues.some((value) => value.toLowerCase().includes(term))
     })
@@ -780,7 +804,7 @@ function App() {
       setTeamDetailLoading(true)
       setTeamDetailError(null)
       try {
-        const teamGuidFilter = `teamid eq guid'${selectedTeamId}'`
+        const teamGuidFilter = `teamid eq ${selectedTeamId}`
         const [membersResult, teamRolesResult, teamProfilesResult] = await Promise.all([
           TeammembershipsService.getAll({
             select: ['teamid', 'systemuserid'],
@@ -948,7 +972,7 @@ function App() {
           const user = userById.get(link.systemuserid)
           return {
             id: link.systemuserid,
-            name: user?.fullname ?? 'Unnamed user',
+            name: getUserDisplayName(user),
             email: user?.internalemailaddress ?? '',
             source: 'direct',
           }
@@ -958,7 +982,7 @@ function App() {
           const user = userById.get(membership.systemuserid)
           return {
             id: membership.systemuserid,
-            name: user?.fullname ?? 'Unnamed user',
+            name: getUserDisplayName(user),
             email: user?.internalemailaddress ?? '',
             source: 'team',
             teamName: teamNameById.get(membership.teamid),
@@ -975,7 +999,7 @@ function App() {
         if (!isActive) return
         setRoleDetail({
           teams: teamSummaries,
-          users: [...labeledDirectUsers, ...labeledTeamUsers],
+          users: sortLabeledUsers([...labeledDirectUsers, ...labeledTeamUsers]),
         })
       } catch (error) {
         console.error('[Role Detail] Load failed', error)
@@ -1016,7 +1040,7 @@ function App() {
             'canreadunmasked',
             'fieldsecurityprofileid',
           ],
-          filter: `_fieldsecurityprofileid_value eq guid'${selectedProfileId}'`,
+          filter: `_fieldsecurityprofileid_value eq ${selectedProfileId}`,
           top: RELATIONSHIP_PAGE_SIZE,
         })
 
@@ -1129,7 +1153,7 @@ function App() {
           const user = userById.get(userId)
           return {
             id: userId,
-            name: user?.fullname ?? 'Unnamed user',
+            name: getUserDisplayName(user),
             email: user?.internalemailaddress ?? '',
             source: 'direct',
           }
@@ -1139,7 +1163,7 @@ function App() {
           const user = userById.get(membership.systemuserid)
           return {
             id: membership.systemuserid,
-            name: user?.fullname ?? 'Unnamed user',
+            name: getUserDisplayName(user),
             email: user?.internalemailaddress ?? '',
             source: 'team',
             teamName: teamNameById.get(membership.teamid),
@@ -1156,7 +1180,7 @@ function App() {
         if (!isActive) return
         setProfileMemberships({
           teams: teamSummaries,
-          users: [...labeledDirectUsers, ...labeledTeamUsers],
+          users: sortLabeledUsers([...labeledDirectUsers, ...labeledTeamUsers]),
         })
       } catch (error) {
         console.error('[Profile Memberships] Load failed', error)
@@ -1394,7 +1418,7 @@ function App() {
                       <span className="grid-cell">{user.fullname ?? 'Unnamed user'}</span>
                       <span className="grid-cell">{user.internalemailaddress ?? 'No email'}</span>
                       <span className="grid-cell">{user.address1_telephone1 ?? 'Not set'}</span>
-                      <span className="grid-cell">{getUserStatus(user)}</span>
+                      <span className="grid-cell">{getUserStatusDisplay(user)}</span>
                       <span className="grid-cell action">
                         <button
                           className="ghost-button small"
@@ -1538,7 +1562,7 @@ function App() {
                     </div>
                     <div className="detail-line">
                       <span className="detail-label">Status</span>
-                      <span>{getUserStatus(selectedUser)}</span>
+                      <span>{getUserStatusDisplay(selectedUser)}</span>
                     </div>
                     <div className="detail-line">
                       <span className="detail-label">Manager Name</span>
