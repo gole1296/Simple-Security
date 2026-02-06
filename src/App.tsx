@@ -31,6 +31,17 @@ const PAGE_SIZE = 25
 const USER_PAGE_SIZE = 500
 const ROLE_PAGE_SIZE = 200
 const RELATIONSHIP_PAGE_SIZE = 200
+const ADMIN_ENV_ID = 'dd8f6081-3275-efb0-8e21-43ac6419d90a'
+const MAKE_ENV_ID = 'dd8f6081-3275-efb0-8e21-43ac6419d90a'
+
+const usersAdminUrl = `https://admin.powerplatform.microsoft.com/environments/${ADMIN_ENV_ID}/users`
+const teamsAdminUrl = `https://admin.powerplatform.microsoft.com/environments/${ADMIN_ENV_ID}/teams`
+const teamMembersAdminUrl = (teamId: string) =>
+  `https://admin.powerplatform.microsoft.com/environments/${ADMIN_ENV_ID}/teams/${teamId}`
+const roleEditorAdminUrl = (roleId: string) =>
+  `https://admin.powerplatform.microsoft.com/environments/${ADMIN_ENV_ID}/security/roles/${roleId}`
+const columnSecurityProfileUrl = (profileId: string) =>
+  `https://make.powerapps.com/environments/${MAKE_ENV_ID}/settings/fieldsecurityprofiles/${profileId}`
 
 type LabeledRole = {
   id: string
@@ -1622,6 +1633,26 @@ function App() {
                   <span>Hide MS Users</span>
                 </label>
                 {activeTab === 'users' && (
+                  <a
+                    className="ghost-button"
+                    href={usersAdminUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View Users
+                  </a>
+                )}
+                {activeTab === 'teams' && (
+                  <a
+                    className="ghost-button"
+                    href={teamsAdminUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View Teams
+                  </a>
+                )}
+                {activeTab === 'users' && (
                   <button className="ghost-button" onClick={() => loadUsersPage('reset')} disabled={usersLoading}>
                     Refresh
                   </button>
@@ -1904,17 +1935,27 @@ function App() {
                 <div className="detail-header">
                   <div className="detail-header-top">
                     <h3>Team Details</h3>
-                    <button
-                      className="detail-close"
-                      type="button"
-                      onClick={() => setSelectedTeamId(null)}
-                      aria-label="Close team details"
-                    >
-                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
-                        <path d="M6 6l12 12" />
-                        <path d="M18 6l-12 12" />
-                      </svg>
-                    </button>
+                    <div className="detail-header-actions">
+                      <a
+                        className="ghost-button small"
+                        href={teamMembersAdminUrl(selectedTeam.teamid)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Manage Team Members
+                      </a>
+                      <button
+                        className="detail-close"
+                        type="button"
+                        onClick={() => setSelectedTeamId(null)}
+                        aria-label="Close team details"
+                      >
+                        <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                          <path d="M6 6l12 12" />
+                          <path d="M18 6l-12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <div className="detail-stack">
                     <div className="detail-line">
@@ -2005,17 +2046,27 @@ function App() {
                 <div className="detail-header">
                   <div className="detail-header-top">
                     <h3>{selectedRole.name ?? 'Unnamed role'}</h3>
-                    <button
-                      className="detail-close"
-                      type="button"
-                      onClick={() => setSelectedRoleId(null)}
-                      aria-label="Close role details"
-                    >
-                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
-                        <path d="M6 6l12 12" />
-                        <path d="M18 6l-12 12" />
-                      </svg>
-                    </button>
+                    <div className="detail-header-actions">
+                      <a
+                        className="ghost-button small"
+                        href={roleEditorAdminUrl(selectedRole.roleid)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Manage Security Role
+                      </a>
+                      <button
+                        className="detail-close"
+                        type="button"
+                        onClick={() => setSelectedRoleId(null)}
+                        aria-label="Close role details"
+                      >
+                        <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                          <path d="M6 6l12 12" />
+                          <path d="M18 6l-12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <p>{selectedRole.description ?? 'No description'}</p>
                 </div>
@@ -2088,17 +2139,27 @@ function App() {
                 <div className="detail-header">
                   <div className="detail-header-top">
                     <h3>{selectedProfile.name ?? 'Unnamed profile'}</h3>
-                    <button
-                      className="detail-close"
-                      type="button"
-                      onClick={() => setSelectedProfileId(null)}
-                      aria-label="Close profile details"
-                    >
-                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
-                        <path d="M6 6l12 12" />
-                        <path d="M18 6l-12 12" />
-                      </svg>
-                    </button>
+                    <div className="detail-header-actions">
+                      <a
+                        className="ghost-button small"
+                        href={columnSecurityProfileUrl(selectedProfile.fieldsecurityprofileid)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Manage Column Security
+                      </a>
+                      <button
+                        className="detail-close"
+                        type="button"
+                        onClick={() => setSelectedProfileId(null)}
+                        aria-label="Close profile details"
+                      >
+                        <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                          <path d="M6 6l12 12" />
+                          <path d="M18 6l-12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <p>{selectedProfile.description ?? 'No description'}</p>
                 </div>

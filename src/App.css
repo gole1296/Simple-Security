@@ -423,6 +423,12 @@
   gap: 1rem;
 }
 
+.detail-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .detail-close {
   border: 1px solid #eadfd3;
   background: #fff7ef;
@@ -566,6 +572,7 @@
   font-size: 0.75rem;
   color: #7b5e4c;
 }
+
 
 .badge-list {
   display: flex;

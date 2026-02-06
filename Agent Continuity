@@ -1,5 +1,10 @@
 Agent Continuity
-Date: 2026-02-05
+Date: 2026-02-06
+
+Project context
+- React + Vite Power Apps app for Dataverse security exploration (Users, Teams, Roles, Field Security Profiles).
+- Data sources: systemuser, team, role, fieldsecurityprofile, fieldpermissions, and join tables (systemuserrolescollection, teamrolescollection, teammemberships, systemuserprofilescollection, teamprofilescollection).
+- Main UI: left-nav tabs, list grids with filters, sliding detail panel, independent scroll areas.
 
 Summary of important changes
 - User status display uses the formatted isdisabled value when available, defaults to Enabled, and the filter uses boolean values.
@@ -9,6 +14,17 @@ Summary of important changes
 - Left nav is now collapsible with icon-only mini mode; tab icons were added and Field Security Profiles uses a key icon.
 - The status pill in the left nav was removed.
 
+Behavior details
+- Hide MS Users: checkbox now always visible in the header actions and filters out users whose fullname starts with #.
+- Role/Profile membership user lists: filtered by Hide MS Users and sorted alphabetically.
+- Field permissions lookup: use _fieldsecurityprofileid_value eq {guid} (no guid'...').
+- User status display: formatted value of isdisabled (Enabled/Disabled) when present; otherwise computed from raw value.
+
+Important files
+- src/App.tsx (filters, OData queries, UI layout, nav collapse state)
+- src/App.css (layout, nav collapse styles, tab icon styling)
+- .power/schemas/dataverse/users.Schema.json (reference for systemuser fields)
+
 Files touched
 - src/App.tsx
 - src/App.css
@@ -16,3 +32,12 @@ Files touched
 Notes
 - Build and deploy: npm run build then pac code push.
 - Current branch merged into main and pushed.
+
+Starting point for new changes
+- Check git status: git status -sb
+- Run build/deploy: npm run build; pac code push
+- If user filters look wrong, review applyUserFilters and user detail loaders in src/App.tsx
+
+Known quirks
+- OData filters: avoid formatted fields in select; use formatted annotation values for display.
+- skipToken pagination is used for list loading.
