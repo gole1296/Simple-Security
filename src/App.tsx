@@ -183,6 +183,8 @@ function App() {
   )
   const [teamSearch, setTeamSearch] = useState('')
   const [teamTypeFilter, setTeamTypeFilter] = useState<'all' | '0' | '1' | '2' | '3'>('all')
+  const [roleSearch, setRoleSearch] = useState('')
+  const [profileSearch, setProfileSearch] = useState('')
 
   const [users, setUsers] = useState<Systemusers[]>([])
   const [usersSkipToken, setUsersSkipToken] = useState<string | null>(null)
@@ -368,6 +370,26 @@ function App() {
     return clauses.length ? clauses.join(' and ') : undefined
   }
 
+  const applyRoleFilters = (filter?: string) => {
+    const clauses: string[] = []
+    if (filter) clauses.push(`(${filter})`)
+    if (roleSearch.trim()) {
+      const term = escapeODataValue(roleSearch.trim())
+      clauses.push(`(contains(name, '${term}') or contains(description, '${term}'))`)
+    }
+    return clauses.length ? clauses.join(' and ') : undefined
+  }
+
+  const applyProfileFilters = (filter?: string) => {
+    const clauses: string[] = []
+    if (filter) clauses.push(`(${filter})`)
+    if (profileSearch.trim()) {
+      const term = escapeODataValue(profileSearch.trim())
+      clauses.push(`(contains(name, '${term}') or contains(description, '${term}'))`)
+    }
+    return clauses.length ? clauses.join(' and ') : undefined
+  }
+
   const filteredUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase()
     const base = users.filter((user) => {
@@ -398,6 +420,33 @@ function App() {
     if (!term) return base
     return base.filter((team) => (team.name ?? '').toLowerCase().includes(term))
   }, [teams, teamSearch, teamTypeFilter])
+
+  const filteredRoles = useMemo(() => {
+    const term = roleSearch.trim().toLowerCase()
+    if (!term) return roles
+    return roles.filter((role) => {
+      const candidateValues = [
+        role.roleid,
+        getRoleBusinessUnitName(role),
+        role.name ?? '',
+        role.description ?? '',
+      ]
+      return candidateValues.some((value) => value.toLowerCase().includes(term))
+    })
+  }, [roles, roleSearch])
+
+  const filteredProfiles = useMemo(() => {
+    const term = profileSearch.trim().toLowerCase()
+    if (!term) return profiles
+    return profiles.filter((profile) => {
+      const candidateValues = [
+        profile.fieldsecurityprofileid,
+        profile.name ?? '',
+        profile.description ?? '',
+      ]
+      return candidateValues.some((value) => value.toLowerCase().includes(term))
+    })
+  }, [profiles, profileSearch])
 
   const handleTabChange = (tab: 'users' | 'teams' | 'roles' | 'profiles') => {
     setActiveTab(tab)
@@ -488,8 +537,10 @@ function App() {
     setRolesError(null)
     try {
       const skipToken = mode === 'more' ? rolesSkipToken ?? undefined : undefined
+      const filter = applyRoleFilters()
       const result = await RolesService.getAll({
         select: ['roleid', 'name', 'description', '_businessunitid_value'],
+        filter,
         orderBy: ['name'],
         top: ROLE_PAGE_SIZE,
         skipToken,
@@ -515,8 +566,10 @@ function App() {
     setProfilesError(null)
     try {
       const skipToken = mode === 'more' ? profilesSkipToken ?? undefined : undefined
+      const filter = applyProfileFilters()
       const result = await FieldsecurityprofilesService.getAll({
         select: ['fieldsecurityprofileid', 'name', 'description'],
+        filter,
         top: PAGE_SIZE,
         skipToken,
       })
@@ -628,6 +681,18 @@ function App() {
       void loadTeamsPage('reset')
     }
   }, [teamSearch, teamTypeFilter])
+
+  useEffect(() => {
+    if (activeTab === 'roles') {
+      void loadRolesPage('reset')
+    }
+  }, [roleSearch])
+
+  useEffect(() => {
+    if (activeTab === 'profiles') {
+      void loadProfilesPage('reset')
+    }
+  }, [profileSearch])
 
   useEffect(() => {
     if (!selectedUserId) {
@@ -1420,6 +1485,28 @@ function App() {
                   </label>
                 </div>
               )}
+              {activeTab === 'roles' && (
+                <div className="panel-header-controls">
+                  <input
+                    className="filter-input"
+                    type="search"
+                    placeholder="Filter roles"
+                    value={roleSearch}
+                    onChange={(event) => setRoleSearch(event.target.value)}
+                  />
+                </div>
+              )}
+              {activeTab === 'profiles' && (
+                <div className="panel-header-controls">
+                  <input
+                    className="filter-input"
+                    type="search"
+                    placeholder="Filter profiles"
+                    value={profileSearch}
+                    onChange={(event) => setProfileSearch(event.target.value)}
+                  />
+                </div>
+              )}
               <div className="panel-header-actions">
                 <label className="toggle">
                   <input
@@ -1511,7 +1598,7 @@ function App() {
                 <>
                   {rolesError && <div className="notice error">{rolesError}</div>}
                   {rolesLoading && roles.length === 0 && <div className="notice">Loading roles...</div>}
-                  {roles.map((role) => (
+                  {filteredRoles.map((role) => (
                     <div className="grid-row" style={{ gridTemplateColumns: gridTemplate }} key={role.roleid}>
                       <span className="grid-cell mono">{role.roleid}</span>
                       <span className="grid-cell">{getRoleBusinessUnitName(role)}</span>
@@ -1530,7 +1617,7 @@ function App() {
                 <>
                   {profilesError && <div className="notice error">{profilesError}</div>}
                   {profilesLoading && profiles.length === 0 && <div className="notice">Loading profiles...</div>}
-                  {profiles.map((profile) => (
+                  {filteredProfiles.map((profile) => (
                     <div
                       className="grid-row"
                       style={{ gridTemplateColumns: gridTemplate }}
@@ -1603,7 +1690,20 @@ function App() {
             <div className="detail-panel-inner">
               <div className="detail">
                 <div className="detail-header">
-                  <h3>User Details</h3>
+                  <div className="detail-header-top">
+                    <h3>User Details</h3>
+                    <button
+                      className="detail-close"
+                      type="button"
+                      onClick={() => setSelectedUserId(null)}
+                      aria-label="Close user details"
+                    >
+                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                        <path d="M6 6l12 12" />
+                        <path d="M18 6l-12 12" />
+                      </svg>
+                    </button>
+                  </div>
                   <div className="detail-stack">
                     <div className="detail-line">
                       <span className="detail-label">Full Name</span>
@@ -1697,7 +1797,20 @@ function App() {
             <div className="detail-panel-inner">
               <div className="detail">
                 <div className="detail-header">
-                  <h3>Team Details</h3>
+                  <div className="detail-header-top">
+                    <h3>Team Details</h3>
+                    <button
+                      className="detail-close"
+                      type="button"
+                      onClick={() => setSelectedTeamId(null)}
+                      aria-label="Close team details"
+                    >
+                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                        <path d="M6 6l12 12" />
+                        <path d="M18 6l-12 12" />
+                      </svg>
+                    </button>
+                  </div>
                   <div className="detail-stack">
                     <div className="detail-line">
                       <span className="detail-label">Team Type</span>
@@ -1785,7 +1898,20 @@ function App() {
             <div className="detail-panel-inner">
               <div className="detail">
                 <div className="detail-header">
-                  <h3>{selectedRole.name ?? 'Unnamed role'}</h3>
+                  <div className="detail-header-top">
+                    <h3>{selectedRole.name ?? 'Unnamed role'}</h3>
+                    <button
+                      className="detail-close"
+                      type="button"
+                      onClick={() => setSelectedRoleId(null)}
+                      aria-label="Close role details"
+                    >
+                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                        <path d="M6 6l12 12" />
+                        <path d="M18 6l-12 12" />
+                      </svg>
+                    </button>
+                  </div>
                   <p>{selectedRole.description ?? 'No description'}</p>
                 </div>
                 {roleDetailError && <div className="notice error">{roleDetailError}</div>}
@@ -1841,7 +1967,20 @@ function App() {
             <div className="detail-panel-inner">
               <div className="detail">
                 <div className="detail-header">
-                  <h3>{selectedProfile.name ?? 'Unnamed profile'}</h3>
+                  <div className="detail-header-top">
+                    <h3>{selectedProfile.name ?? 'Unnamed profile'}</h3>
+                    <button
+                      className="detail-close"
+                      type="button"
+                      onClick={() => setSelectedProfileId(null)}
+                      aria-label="Close profile details"
+                    >
+                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                        <path d="M6 6l12 12" />
+                        <path d="M18 6l-12 12" />
+                      </svg>
+                    </button>
+                  </div>
                   <p>{selectedProfile.description ?? 'No description'}</p>
                 </div>
                 <div className="detail-section">
