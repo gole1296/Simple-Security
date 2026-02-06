@@ -2041,17 +2041,26 @@ function App() {
                   ) : profilePermissions.length === 0 ? (
                     <p className="muted">No field permissions found.</p>
                   ) : (
-                    <ul className="detail-list">
+                    <div className="permission-table">
+                      <div className="permission-row permission-header">
+                        <span>Table Schema</span>
+                        <span>Field Schema</span>
+                        <span>Permissions</span>
+                      </div>
                       {profilePermissions.map((permission) => (
-                        <li key={permission.id}>
-                          <span>{`${permission.entity}.${permission.attribute}`}</span>
-                          <span className="detail-meta">
-                            Read: {permission.read ?? 'Unknown'} · Update: {permission.update ?? 'Unknown'} ·
-                            Create: {permission.create ?? 'Unknown'}
+                        <div className="permission-row" key={permission.id}>
+                          <span className="permission-cell mono">{permission.entity}</span>
+                          <span className="permission-cell mono">{permission.attribute}</span>
+                          <span className="permission-cell">
+                            <span className="permission-stack">
+                              <span>Read: {permission.read ?? 'Unknown'}</span>
+                              <span>Update: {permission.update ?? 'Unknown'}</span>
+                              <span>Create: {permission.create ?? 'Unknown'}</span>
+                            </span>
                           </span>
-                        </li>
+                        </div>
                       ))}
-                    </ul>
+                    </div>
                   )}
                 </div>
               </div>
