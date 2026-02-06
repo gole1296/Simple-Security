@@ -11,6 +11,7 @@ export * as FieldsecurityprofilesModel from './models/FieldsecurityprofilesModel
 export * as PrincipalobjectaccesssetModel from './models/PrincipalobjectaccesssetModel';
 export * as PrincipalobjectattributeaccesssetModel from './models/PrincipalobjectattributeaccesssetModel';
 export * as PrivilegesModel from './models/PrivilegesModel';
+export * as RoleprivilegescollectionModel from './models/RoleprivilegescollectionModel';
 export * as RolesModel from './models/RolesModel';
 export * as SystemuserprofilescollectionModel from './models/SystemuserprofilescollectionModel';
 export * as SystemuserrolescollectionModel from './models/SystemuserrolescollectionModel';
@@ -28,6 +29,7 @@ export * from './services/FieldsecurityprofilesService';
 export * from './services/PrincipalobjectaccesssetService';
 export * from './services/PrincipalobjectattributeaccesssetService';
 export * from './services/PrivilegesService';
+export * from './services/RoleprivilegescollectionService';
 export * from './services/RolesService';
 export * from './services/SystemuserprofilescollectionService';
 export * from './services/SystemuserrolescollectionService';

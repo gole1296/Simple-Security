@@ -47,6 +47,13 @@ export const dataSourcesInfo = {
     "dataSourceType": "Dataverse",
     "apis": {}
   },
+  "roleprivilegescollection": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "roleprivilegeid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
   "roles": {
     "tableId": "",
     "version": "",

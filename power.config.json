@@ -87,9 +87,14 @@
           "entitySetName": "teamprofilescollection",
           "logicalName": "teamprofiles",
           "isHidden": false
+        },
+        "roleprivileges": {
+          "entitySetName": "roleprivilegescollection",
+          "logicalName": "roleprivileges"
         }
       },
       "actions": null
     }
-  }
+  },
+  "version": "1.0"
 }

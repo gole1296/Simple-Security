@@ -1,0 +1,195 @@
+{
+  "name": "roleprivileges",
+  "title": "roleprivileges",
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "x-ms-dataverse-entity": true,
+      "x-ms-dataverse-entityset": "roleprivilegescollection",
+      "x-ms-dataverse-primary-id": "roleprivilegeid",
+      "x-ms-dataverse-primary-name": null,
+      "properties": {
+        "canbedeleted": {
+          "type": "string",
+          "title": "Can Be Deleted",
+          "x-ms-dataverse-attribute": "canbedeleted",
+          "x-ms-dataverse-type": "ManagedPropertyType",
+          "x-ms-schema-name": "CanBeDeleted",
+          "required": true
+        },
+        "componentstate": {
+          "type": "string",
+          "title": "Component State",
+          "x-ms-dataverse-attribute": "componentstate",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "ComponentState",
+          "x-ms-read-only": true,
+          "required": true,
+          "enum": [
+            "Published",
+            "Unpublished",
+            "Deleted",
+            "Deleted Unpublished"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "Color": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "faece09f-cefc-11de-8150-00155da18b00",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "Component State",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "ismanaged": {
+          "type": "string",
+          "title": "ismanaged",
+          "x-ms-dataverse-attribute": "ismanaged",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "IsManaged",
+          "x-ms-read-only": true,
+          "required": true,
+          "enum": [
+            "Unmanaged",
+            "Managed"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "9d04e035-5408-4c1d-a5aa-20445a02f691",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "Is Component Managed",
+          "x-ms-optionSetType": "Boolean"
+        },
+        "ismanagedname": {
+          "type": "string",
+          "title": "ismanagedname",
+          "x-ms-dataverse-attribute": "ismanagedname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "IsManagedName",
+          "x-ms-read-only": true
+        },
+        "overwritetime": {
+          "type": "string",
+          "title": "Record Overwrite Time",
+          "x-ms-dataverse-attribute": "overwritetime",
+          "x-ms-dataverse-type": "DateTimeType",
+          "x-ms-schema-name": "OverwriteTime",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "privilegedepthmask": {
+          "type": "string",
+          "title": "privilegedepthmask",
+          "x-ms-dataverse-attribute": "privilegedepthmask",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "PrivilegeDepthMask",
+          "required": true
+        },
+        "privilegeid": {
+          "type": "string",
+          "title": "privilegeid",
+          "x-ms-dataverse-attribute": "privilegeid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "PrivilegeId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "recordfilterid": {
+          "type": "string",
+          "title": "Record Filter",
+          "x-ms-dataverse-attribute": "recordfilterid",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "RecordFilterId"
+        },
+        "recordfilteridname": {
+          "type": "string",
+          "title": "recordfilteridname",
+          "x-ms-dataverse-attribute": "recordfilteridname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "RecordFilterIdName",
+          "x-ms-read-only": true,
+          "maxLength": 100
+        },
+        "roleid": {
+          "type": "string",
+          "title": "roleid",
+          "x-ms-dataverse-attribute": "roleid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "RoleId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "roleprivilegeid": {
+          "type": "string",
+          "title": "roleprivilegeid",
+          "x-ms-dataverse-attribute": "roleprivilegeid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "RolePrivilegeId",
+          "x-ms-dataverse-primary-id": true,
+          "required": true,
+          "x-ms-keyType": "primary"
+        },
+        "roleprivilegeidunique": {
+          "type": "string",
+          "title": "roleprivilegeidunique",
+          "x-ms-dataverse-attribute": "roleprivilegeidunique",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "RolePrivilegeIdUnique",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "solutionid": {
+          "type": "string",
+          "title": "Solution",
+          "x-ms-dataverse-attribute": "solutionid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "SolutionId",
+          "x-ms-read-only": true,
+          "required": true
+        },
+        "supportingsolutionid": {
+          "type": "string",
+          "title": "Solution",
+          "x-ms-dataverse-attribute": "supportingsolutionid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "SupportingSolutionId",
+          "x-ms-read-only": true
+        },
+        "versionnumber": {
+          "type": "string",
+          "title": "versionnumber",
+          "x-ms-dataverse-attribute": "versionnumber",
+          "x-ms-dataverse-type": "BigIntType",
+          "x-ms-schema-name": "VersionNumber",
+          "x-ms-read-only": true
+        }
+      },
+      "required": [
+        "canbedeleted",
+        "componentstate",
+        "ismanaged",
+        "overwritetime",
+        "privilegedepthmask",
+        "privilegeid",
+        "roleid",
+        "roleprivilegeid",
+        "roleprivilegeidunique",
+        "solutionid"
+      ]
+    }
+  }
+}
