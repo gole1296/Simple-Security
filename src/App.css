@@ -178,6 +178,28 @@
   box-shadow: 0 0 0 3px rgba(207, 123, 81, 0.15);
 }
 
+.filter-select {
+  border: 1px solid #eadfd3;
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.78rem;
+  color: #3b2f27;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: #6b5347;
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: #cf7b51;
+}
+
 .panel-header h2 {
   margin: 0 0 0.4rem;
   font-size: 1.25rem;
@@ -307,11 +329,17 @@
   font-size: 0.9rem;
 }
 
-.detail-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.75rem;
+.detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
   margin-top: 0.75rem;
+}
+
+.detail-line {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .detail-label {

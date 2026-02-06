@@ -24,6 +24,7 @@ import type { Teamrolescollection } from './generated/models/Teamrolescollection
 import type { Teams } from './generated/models/TeamsModel'
 
 const PAGE_SIZE = 25
+const ROLE_PAGE_SIZE = 200
 const RELATIONSHIP_PAGE_SIZE = 200
 
 type LabeledRole = {
@@ -149,6 +150,8 @@ const getFormattedValue = (record: Record<string, unknown>, field: string) => {
   return typeof value === 'string' ? value : undefined
 }
 
+const escapeODataValue = (value: string) => value.replace(/'/g, "''")
+
 const buildOrFilter = (field: string, ids: string[]) =>
   ids.length === 0 ? '' : ids.map((id) => `${field} eq ${id}`).join(' or ')
 
@@ -164,6 +167,12 @@ const uniqueById = <T extends { id: string }>(items: T[]) => {
 function App() {
   const [activeTab, setActiveTab] = useState<'users' | 'teams' | 'roles' | 'profiles'>('users')
   const [userSearch, setUserSearch] = useState('')
+  const [hideSystemUsers, setHideSystemUsers] = useState(true)
+  const [userStatusFilter, setUserStatusFilter] = useState<'enabled' | 'disabled' | 'all'>(
+    'enabled'
+  )
+  const [teamSearch, setTeamSearch] = useState('')
+  const [teamTypeFilter, setTeamTypeFilter] = useState<'all' | '0' | '1' | '2' | '3'>('all')
 
   const [users, setUsers] = useState<Systemusers[]>([])
   const [usersSkipToken, setUsersSkipToken] = useState<string | null>(null)
@@ -202,6 +211,14 @@ function App() {
   const [roleDetailLoading, setRoleDetailLoading] = useState(false)
   const [roleDetailError, setRoleDetailError] = useState<string | null>(null)
 
+  const [teamDetail, setTeamDetail] = useState<{
+    members: LabeledUser[]
+    roles: LabeledRole[]
+    fieldSecurityProfiles: LabeledProfile[]
+  } | null>(null)
+  const [teamDetailLoading, setTeamDetailLoading] = useState(false)
+  const [teamDetailError, setTeamDetailError] = useState<string | null>(null)
+
   const [profilePermissions, setProfilePermissions] = useState<FieldPermissionSummary[]>([])
   const [profilePermissionsLoading, setProfilePermissionsLoading] = useState(false)
   const [profilePermissionsError, setProfilePermissionsError] = useState<string | null>(null)
@@ -237,21 +254,106 @@ function App() {
     )
   }
 
+  const getUserStatus = (user: Systemusers) => {
+    const record = user as unknown as Record<string, unknown>
+    const formatted = getFormattedValue(record, 'isdisabled')
+    if (formatted === 'Yes') return 'Disabled'
+    if (formatted === 'No') return 'Enabled'
+    return userStatusLabel(String(user.isdisabled ?? ''))
+  }
+
+  const getManagerName = (user: Systemusers) => {
+    const record = user as unknown as Record<string, unknown>
+    return (
+      getFormattedValue(record, '_parentsystemuserid_value') ||
+      (record.parentsystemuseridname as string | undefined) ||
+      user._parentsystemuserid_value ||
+      'Not set'
+    )
+  }
+
+  const getTeamBusinessUnitName = (team: Teams) => {
+    const record = team as unknown as Record<string, unknown>
+    return (
+      getFormattedValue(record, '_businessunitid_value') ||
+      (record.businessunitidname as string | undefined) ||
+      team._businessunitid_value ||
+      'Not loaded'
+    )
+  }
+
+  const getTeamAdminName = (team: Teams) => {
+    const record = team as unknown as Record<string, unknown>
+    return (
+      getFormattedValue(record, '_administratorid_value') ||
+      (record.administratoridname as string | undefined) ||
+      team._administratorid_value ||
+      'Not loaded'
+    )
+  }
+
+  const getRoleBusinessUnitName = (role: Roles) => {
+    const record = role as unknown as Record<string, unknown>
+    return (
+      getFormattedValue(record, '_businessunitid_value') ||
+      (record.businessunitidname as string | undefined) ||
+      'Not loaded'
+    )
+  }
+
+  const applyUserFilters = (filter?: string) => {
+    const clauses: string[] = []
+    if (filter) clauses.push(`(${filter})`)
+    if (hideSystemUsers) clauses.push("not startswith(fullname, '#')")
+    if (userStatusFilter !== 'all') {
+      clauses.push(`isdisabled eq ${userStatusFilter === 'disabled' ? 'true' : 'false'}`)
+    }
+    return clauses.join(' and ')
+  }
+
+  const applyTeamFilters = (filter?: string) => {
+    const clauses: string[] = []
+    if (filter) clauses.push(`(${filter})`)
+    if (teamTypeFilter !== 'all') {
+      clauses.push(`teamtype eq ${teamTypeFilter}`)
+    }
+    if (teamSearch.trim()) {
+      const term = escapeODataValue(teamSearch.trim())
+      clauses.push(`contains(name, '${term}')`)
+    }
+    return clauses.length ? clauses.join(' and ') : undefined
+  }
+
   const filteredUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase()
-    if (!term) return users
-    return users.filter((user) => {
+    const base = users.filter((user) => {
+      const status = getUserStatus(user)
+      if (userStatusFilter === 'all') return true
+      return userStatusFilter === 'disabled' ? status === 'Disabled' : status === 'Enabled'
+    })
+    if (!term) return base
+    return base.filter((user) => {
       const candidateValues = [
         user.systemuserid,
         getBusinessUnitName(user),
         user.fullname ?? '',
         user.internalemailaddress ?? '',
         user.address1_telephone1 ?? '',
-        userStatusLabel(String(user.isdisabled ?? '')),
+        getUserStatus(user),
       ]
       return candidateValues.some((value) => value.toLowerCase().includes(term))
     })
-  }, [users, userSearch])
+  }, [users, userSearch, userStatusFilter])
+
+  const filteredTeams = useMemo(() => {
+    const term = teamSearch.trim().toLowerCase()
+    const base =
+      teamTypeFilter === 'all'
+        ? teams
+        : teams.filter((team) => String(team.teamtype ?? '') === teamTypeFilter)
+    if (!term) return base
+    return base.filter((team) => (team.name ?? '').toLowerCase().includes(term))
+  }, [teams, teamSearch, teamTypeFilter])
 
   const handleTabChange = (tab: 'users' | 'teams' | 'roles' | 'profiles') => {
     setActiveTab(tab)
@@ -260,6 +362,7 @@ function App() {
     setSelectedRoleId(null)
     setSelectedProfileId(null)
     setUserDetail(null)
+    setTeamDetail(null)
     setRoleDetail(null)
     setProfileMemberships(null)
   }
@@ -269,6 +372,7 @@ function App() {
     setUsersError(null)
     try {
       const skipToken = mode === 'more' ? usersSkipToken ?? undefined : undefined
+      const filter = applyUserFilters()
       const result = await SystemusersService.getAll({
         select: [
           'systemuserid',
@@ -276,8 +380,10 @@ function App() {
           'internalemailaddress',
           'address1_telephone1',
           '_businessunitid_value',
+          '_parentsystemuserid_value',
           'isdisabled',
         ],
+        filter,
         top: PAGE_SIZE,
         skipToken,
       })
@@ -302,8 +408,18 @@ function App() {
     setTeamsError(null)
     try {
       const skipToken = mode === 'more' ? teamsSkipToken ?? undefined : undefined
+      const filter = applyTeamFilters()
       const result = await TeamsService.getAll({
-        select: ['teamid', 'name', 'teamtype', 'description'],
+        select: [
+          'teamid',
+          'name',
+          'teamtype',
+          'description',
+          '_businessunitid_value',
+          '_administratorid_value',
+          'azureactivedirectoryobjectid',
+        ],
+        filter,
         top: PAGE_SIZE,
         skipToken,
       })
@@ -329,8 +445,9 @@ function App() {
     try {
       const skipToken = mode === 'more' ? rolesSkipToken ?? undefined : undefined
       const result = await RolesService.getAll({
-        select: ['roleid', 'name', 'description'],
-        top: PAGE_SIZE,
+        select: ['roleid', 'name', 'description', '_businessunitid_value'],
+        orderBy: ['name'],
+        top: ROLE_PAGE_SIZE,
         skipToken,
       })
 
@@ -381,7 +498,7 @@ function App() {
     if (ids.length === 0) return [] as Roles[]
     const filter = buildOrFilter('roleid', ids)
     const result = await RolesService.getAll({
-      select: ['roleid', 'name', 'description'],
+      select: ['roleid', 'name', 'description', '_businessunitid_value'],
       filter,
       top: ids.length,
     })
@@ -395,7 +512,15 @@ function App() {
     if (ids.length === 0) return [] as Teams[]
     const filter = buildOrFilter('teamid', ids)
     const result = await TeamsService.getAll({
-      select: ['teamid', 'name', 'teamtype', 'description'],
+      select: [
+        'teamid',
+        'name',
+        'teamtype',
+        'description',
+        '_businessunitid_value',
+        '_administratorid_value',
+        'azureactivedirectoryobjectid',
+      ],
       filter,
       top: ids.length,
     })
@@ -415,9 +540,10 @@ function App() {
         'internalemailaddress',
         'address1_telephone1',
         '_businessunitid_value',
+        '_parentsystemuserid_value',
         'isdisabled',
       ],
-      filter,
+      filter: applyUserFilters(filter),
       top: ids.length,
     })
     if (!result.success) {
@@ -446,6 +572,18 @@ function App() {
     void loadRolesPage()
     void loadProfilesPage()
   }, [])
+
+  useEffect(() => {
+    if (activeTab === 'users') {
+      void loadUsersPage('reset')
+    }
+  }, [hideSystemUsers, userStatusFilter])
+
+  useEffect(() => {
+    if (activeTab === 'teams') {
+      void loadTeamsPage('reset')
+    }
+  }, [teamSearch, teamTypeFilter])
 
   useEffect(() => {
     if (!selectedUserId) {
@@ -631,6 +769,119 @@ function App() {
   }, [selectedUserId])
 
   useEffect(() => {
+    if (!selectedTeamId) {
+      setTeamDetail(null)
+      setTeamDetailError(null)
+      return
+    }
+
+    let isActive = true
+    const loadTeamDetail = async () => {
+      setTeamDetailLoading(true)
+      setTeamDetailError(null)
+      try {
+        const teamGuidFilter = `teamid eq guid'${selectedTeamId}'`
+        const [membersResult, teamRolesResult, teamProfilesResult] = await Promise.all([
+          TeammembershipsService.getAll({
+            select: ['teamid', 'systemuserid'],
+            filter: teamGuidFilter,
+            top: RELATIONSHIP_PAGE_SIZE,
+          }),
+          TeamrolescollectionService.getAll({
+            select: ['teamid', 'roleid'],
+            filter: teamGuidFilter,
+            top: RELATIONSHIP_PAGE_SIZE,
+          }),
+          TeamprofilescollectionService.getAll({
+            select: ['teamid', 'fieldsecurityprofileid'],
+            filter: teamGuidFilter,
+            top: RELATIONSHIP_PAGE_SIZE,
+          }),
+        ])
+
+        if (!membersResult.success) {
+          throw new Error(`Unable to load team members. ${describeError(membersResult.error)}`)
+        }
+        if (!teamRolesResult.success) {
+          throw new Error(`Unable to load team roles. ${describeError(teamRolesResult.error)}`)
+        }
+        if (!teamProfilesResult.success) {
+          throw new Error(
+            `Unable to load team field security profiles. ${describeError(teamProfilesResult.error)}`
+          )
+        }
+
+        const memberLinks = membersResult.data as Teammemberships[]
+        const roleLinks = teamRolesResult.data as Teamrolescollection[]
+        const profileLinks = teamProfilesResult.data as Teamprofilescollection[]
+
+        const [users, roles, profiles] = await Promise.all([
+          fetchUsersByIds(uniqueById(memberLinks.map((link) => ({ id: link.systemuserid }))).map((i) => i.id)),
+          fetchRolesByIds(uniqueById(roleLinks.map((link) => ({ id: link.roleid }))).map((i) => i.id)),
+          fetchProfilesByIds(
+            uniqueById(profileLinks.map((link) => ({ id: link.fieldsecurityprofileid }))).map((i) => i.id)
+          ),
+        ])
+
+        const userById = new Map<string, Systemusers>(users.map((user) => [user.systemuserid, user]))
+        const roleById = new Map<string, Roles>(roles.map((role) => [role.roleid, role]))
+        const profileById = new Map<string, Fieldsecurityprofiles>(
+          profiles.map((profile) => [profile.fieldsecurityprofileid, profile])
+        )
+
+        const members: LabeledUser[] = memberLinks.map((link) => {
+          const user = userById.get(link.systemuserid)
+          return {
+            id: link.systemuserid,
+            name: user?.fullname ?? 'Unnamed user',
+            email: user?.internalemailaddress ?? '',
+            source: 'direct',
+          }
+        })
+
+        const teamRoles: LabeledRole[] = roleLinks.map((link) => {
+          const role = roleById.get(link.roleid)
+          return {
+            id: link.roleid,
+            name: role?.name ?? 'Unnamed role',
+            description: role?.description ?? '',
+            source: 'direct',
+          }
+        })
+
+        const teamProfiles: LabeledProfile[] = profileLinks.map((link) => {
+          const profile = profileById.get(link.fieldsecurityprofileid)
+          return {
+            id: link.fieldsecurityprofileid,
+            name: profile?.name ?? 'Unnamed profile',
+            description: profile?.description ?? '',
+            source: 'direct',
+          }
+        })
+
+        if (!isActive) return
+        setTeamDetail({
+          members,
+          roles: teamRoles,
+          fieldSecurityProfiles: teamProfiles,
+        })
+      } catch (error) {
+        console.error('[Team Detail] Load failed', error)
+        if (!isActive) return
+        setTeamDetailError(describeError(error))
+      } finally {
+        if (isActive) setTeamDetailLoading(false)
+      }
+    }
+
+    void loadTeamDetail()
+
+    return () => {
+      isActive = false
+    }
+  }, [selectedTeamId])
+
+  useEffect(() => {
     if (!selectedRoleId) {
       setRoleDetail(null)
       setRoleDetailError(null)
@@ -765,7 +1016,7 @@ function App() {
             'canreadunmasked',
             'fieldsecurityprofileid',
           ],
-          filter: `fieldsecurityprofileid eq ${selectedProfileId}`,
+          filter: `_fieldsecurityprofileid_value eq guid'${selectedProfileId}'`,
           top: RELATIONSHIP_PAGE_SIZE,
         })
 
@@ -959,17 +1210,19 @@ function App() {
       columns: [
         { key: 'teamid', label: 'Team Id' },
         { key: 'name', label: 'Name' },
+        { key: 'teamtype', label: 'Team Type' },
         { key: 'description', label: 'Description' },
       ],
-      template: '1.4fr 1fr 1.4fr 140px',
+      template: '1.4fr 1fr 0.9fr 1.2fr 140px',
     },
     roles: {
       columns: [
         { key: 'roleid', label: 'Role Id' },
+        { key: 'businessUnit', label: 'Business Unit' },
         { key: 'name', label: 'Name' },
         { key: 'description', label: 'Description' },
       ],
-      template: '1.4fr 1fr 1.4fr 140px',
+      template: '1.4fr 1fr 1fr 1.4fr 140px',
     },
     profiles: {
       columns: [
@@ -1046,6 +1299,55 @@ function App() {
                   value={userSearch}
                   onChange={(event) => setUserSearch(event.target.value)}
                 />
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={hideSystemUsers}
+                    onChange={(event) => setHideSystemUsers(event.target.checked)}
+                  />
+                  <span>Hide system accounts</span>
+                </label>
+                <label className="toggle">
+                  <span>Status</span>
+                  <select
+                    className="filter-select"
+                    value={userStatusFilter}
+                    onChange={(event) =>
+                      setUserStatusFilter(event.target.value as 'enabled' | 'disabled' | 'all')
+                    }
+                  >
+                    <option value="enabled">Enabled only</option>
+                    <option value="disabled">Disabled only</option>
+                    <option value="all">All</option>
+                  </select>
+                </label>
+              </div>
+            )}
+            {activeTab === 'teams' && (
+              <div className="panel-header-controls">
+                <input
+                  className="filter-input"
+                  type="search"
+                  placeholder="Filter teams"
+                  value={teamSearch}
+                  onChange={(event) => setTeamSearch(event.target.value)}
+                />
+                <label className="toggle">
+                  <span>Type</span>
+                  <select
+                    className="filter-select"
+                    value={teamTypeFilter}
+                    onChange={(event) =>
+                      setTeamTypeFilter(event.target.value as 'all' | '0' | '1' | '2' | '3')
+                    }
+                  >
+                    <option value="all">All types</option>
+                    <option value="0">Owner</option>
+                    <option value="1">Access</option>
+                    <option value="2">Security Group</option>
+                    <option value="3">Office Group</option>
+                  </select>
+                </label>
               </div>
             )}
             {activeTab === 'users' && (
@@ -1092,7 +1394,7 @@ function App() {
                       <span className="grid-cell">{user.fullname ?? 'Unnamed user'}</span>
                       <span className="grid-cell">{user.internalemailaddress ?? 'No email'}</span>
                       <span className="grid-cell">{user.address1_telephone1 ?? 'Not set'}</span>
-                      <span className="grid-cell">{userStatusLabel(String(user.isdisabled ?? ''))}</span>
+                      <span className="grid-cell">{getUserStatus(user)}</span>
                       <span className="grid-cell action">
                         <button
                           className="ghost-button small"
@@ -1109,10 +1411,11 @@ function App() {
                 <>
                   {teamsError && <div className="notice error">{teamsError}</div>}
                   {teamsLoading && teams.length === 0 && <div className="notice">Loading teams...</div>}
-                  {teams.map((team) => (
+                  {filteredTeams.map((team) => (
                     <div className="grid-row" style={{ gridTemplateColumns: gridTemplate }} key={team.teamid}>
                       <span className="grid-cell mono">{team.teamid}</span>
                       <span className="grid-cell">{team.name ?? 'Unnamed team'}</span>
+                      <span className="grid-cell">{teamTypeLabel(String(team.teamtype ?? ''))}</span>
                       <span className="grid-cell">{team.description ?? 'No description'}</span>
                       <span className="grid-cell action">
                         <button className="ghost-button small" onClick={() => setSelectedTeamId(team.teamid)}>
@@ -1130,6 +1433,7 @@ function App() {
                   {roles.map((role) => (
                     <div className="grid-row" style={{ gridTemplateColumns: gridTemplate }} key={role.roleid}>
                       <span className="grid-cell mono">{role.roleid}</span>
+                      <span className="grid-cell">{getRoleBusinessUnitName(role)}</span>
                       <span className="grid-cell">{role.name ?? 'Unnamed role'}</span>
                       <span className="grid-cell">{role.description ?? 'No description'}</span>
                       <span className="grid-cell action">
@@ -1218,21 +1522,27 @@ function App() {
             <div className="detail-panel-inner">
               <div className="detail">
                 <div className="detail-header">
-                  <h3>{selectedUser.fullname ?? 'Unnamed user'}</h3>
-                  <div className="detail-summary">
-                    <div>
-                      <span className="detail-label">Email</span>
+                  <h3>User Details</h3>
+                  <div className="detail-stack">
+                    <div className="detail-line">
+                      <span className="detail-label">Full Name</span>
+                      <span>{selectedUser.fullname ?? 'Unnamed user'}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Business Unit</span>
+                      <span>{getBusinessUnitName(selectedUser)}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Primary Email</span>
                       <span>{selectedUser.internalemailaddress ?? 'No email address'}</span>
                     </div>
-                    <div>
-                      <span className="detail-label">Business Unit</span>
-                      <span>
-                        {getBusinessUnitName(selectedUser)}
-                      </span>
-                    </div>
-                    <div>
+                    <div className="detail-line">
                       <span className="detail-label">Status</span>
-                      <span>{userStatusLabel(String(selectedUser.isdisabled ?? ''))}</span>
+                      <span>{getUserStatus(selectedUser)}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Manager Name</span>
+                      <span>{getManagerName(selectedUser)}</span>
                     </div>
                   </div>
                 </div>
@@ -1306,19 +1616,81 @@ function App() {
             <div className="detail-panel-inner">
               <div className="detail">
                 <div className="detail-header">
-                  <h3>{selectedTeam.name ?? 'Unnamed team'}</h3>
-                  <div className="detail-summary">
-                    <div>
-                      <span className="detail-label">Type</span>
+                  <h3>Team Details</h3>
+                  <div className="detail-stack">
+                    <div className="detail-line">
+                      <span className="detail-label">Team Type</span>
                       <span>{teamTypeLabel(String(selectedTeam.teamtype ?? ''))}</span>
                     </div>
-                    <div>
+                    <div className="detail-line">
+                      <span className="detail-label">Business Unit</span>
+                      <span>{getTeamBusinessUnitName(selectedTeam)}</span>
+                    </div>
+                    <div className="detail-line">
                       <span className="detail-label">Description</span>
                       <span>{selectedTeam.description ?? 'No description'}</span>
                     </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Administrator</span>
+                      <span>{getTeamAdminName(selectedTeam)}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Object Id for Group</span>
+                      <span>{selectedTeam.azureactivedirectoryobjectid ?? 'Not set'}</span>
+                    </div>
                   </div>
                 </div>
-                <p className="muted">Additional team details can be added here.</p>
+                {teamDetailError && <div className="notice error">{teamDetailError}</div>}
+                {teamDetailLoading && <div className="notice">Loading team details...</div>}
+                {teamDetail && (
+                  <>
+                    <div className="detail-section">
+                      <h4>Team Members</h4>
+                      {teamDetail.members.length === 0 ? (
+                        <p className="muted">No members assigned.</p>
+                      ) : (
+                        <ul className="detail-list">
+                          {teamDetail.members.map((member) => (
+                            <li key={member.id}>
+                              <span>{member.name}</span>
+                              <span className="detail-meta">{member.email ?? 'No email'}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="detail-section">
+                      <h4>Security Roles</h4>
+                      {teamDetail.roles.length === 0 ? (
+                        <p className="muted">No roles assigned.</p>
+                      ) : (
+                        <ul className="detail-list">
+                          {teamDetail.roles.map((role) => (
+                            <li key={role.id}>
+                              <span>{role.name}</span>
+                              <span className="detail-meta">{role.description ?? 'No description'}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="detail-section">
+                      <h4>Field Security Profiles</h4>
+                      {teamDetail.fieldSecurityProfiles.length === 0 ? (
+                        <p className="muted">No field security profiles assigned.</p>
+                      ) : (
+                        <ul className="detail-list">
+                          {teamDetail.fieldSecurityProfiles.map((profile) => (
+                            <li key={profile.id}>
+                              <span>{profile.name}</span>
+                              <span className="detail-meta">{profile.description ?? 'No description'}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
