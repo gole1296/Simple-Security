@@ -546,9 +546,17 @@
   color: #2f211a;
 }
 
+.permission-cell.mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .permission-stack {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
   gap: 0.2rem;
   font-size: 0.78rem;
   color: #6b5347;
