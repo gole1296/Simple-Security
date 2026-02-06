@@ -567,6 +567,12 @@
   color: #7b5e4c;
 }
 
+.badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .badge {
   font-size: 0.68rem;
   font-weight: 700;
@@ -584,6 +590,11 @@
 .badge-team {
   background: rgba(207, 123, 81, 0.18);
   color: #7a4023;
+}
+
+.badge-table {
+  background: rgba(72, 120, 170, 0.18);
+  color: #2b4f6d;
 }
 
 .notice {

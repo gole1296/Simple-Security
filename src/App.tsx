@@ -3,7 +3,9 @@ import './App.css'
 import {
   FieldpermissionsService,
   FieldsecurityprofilesService,
+  PrivilegesService,
   RolesService,
+  RoleprivilegescollectionService,
   SystemuserprofilescollectionService,
   SystemuserrolescollectionService,
   SystemusersService,
@@ -14,6 +16,8 @@ import {
 } from './generated'
 import type { Fieldpermissions } from './generated/models/FieldpermissionsModel'
 import type { Fieldsecurityprofiles } from './generated/models/FieldsecurityprofilesModel'
+import type { Privileges } from './generated/models/PrivilegesModel'
+import type { Roleprivilegescollection } from './generated/models/RoleprivilegescollectionModel'
 import type { Roles } from './generated/models/RolesModel'
 import type { Systemuserprofilescollection } from './generated/models/SystemuserprofilescollectionModel'
 import type { Systemuserrolescollection } from './generated/models/SystemuserrolescollectionModel'
@@ -69,6 +73,7 @@ type UserDetail = {
 type RoleDetail = {
   teams: TeamSummary[]
   users: LabeledUser[]
+  relatedTables: string[]
 }
 
 type ProfileMemberships = {
@@ -172,6 +177,17 @@ const sortLabeledUsers = (items: LabeledUser[]) =>
     if (emailCompare !== 0) return emailCompare
     return a.id.localeCompare(b.id)
   })
+
+const extractEntitySchemaFromPrivilege = (name?: string) => {
+  if (!name) return null
+  const trimmed = name.startsWith('prv') ? name.slice(3) : name
+  const prefixes = ['AppendTo', 'Append', 'Assign', 'Share', 'Read', 'Write', 'Create', 'Delete']
+  const prefix = prefixes.find((entry) => trimmed.startsWith(entry))
+  if (!prefix) return null
+  const entity = trimmed.slice(prefix.length)
+  if (!entity) return null
+  return entity.toLowerCase()
+}
 
 function App() {
   const [navCollapsed, setNavCollapsed] = useState(false)
@@ -663,6 +679,20 @@ function App() {
     return result.data
   }
 
+  const fetchPrivilegesByIds = async (ids: string[]) => {
+    if (ids.length === 0) return [] as Privileges[]
+    const filter = buildOrFilter('privilegeid', ids)
+    const result = await PrivilegesService.getAll({
+      select: ['privilegeid', 'name'],
+      filter,
+      top: ids.length,
+    })
+    if (!result.success) {
+      throw new Error(`Unable to load privileges. ${describeError(result.error)}`)
+    }
+    return result.data
+  }
+
   useEffect(() => {
     void loadUsersPage()
     void loadTeamsPage()
@@ -998,7 +1028,7 @@ function App() {
       setRoleDetailLoading(true)
       setRoleDetailError(null)
       try {
-        const [directUsersResult, teamsResult] = await Promise.all([
+        const [directUsersResult, teamsResult, rolePrivilegesResult] = await Promise.all([
           SystemuserrolescollectionService.getAll({
             select: ['roleid', 'systemuserid'],
             filter: `roleid eq ${selectedRoleId}`,
@@ -1006,6 +1036,11 @@ function App() {
           }),
           TeamrolescollectionService.getAll({
             select: ['roleid', 'teamid'],
+            filter: `roleid eq ${selectedRoleId}`,
+            top: RELATIONSHIP_PAGE_SIZE,
+          }),
+          RoleprivilegescollectionService.getAll({
+            select: ['roleid', 'privilegeid', 'privilegedepthmask'],
             filter: `roleid eq ${selectedRoleId}`,
             top: RELATIONSHIP_PAGE_SIZE,
           }),
@@ -1019,9 +1054,15 @@ function App() {
         if (!teamsResult.success) {
           throw new Error(`Unable to load role teams. ${describeError(teamsResult.error)}`)
         }
+        if (!rolePrivilegesResult.success) {
+          throw new Error(
+            `Unable to load role privileges. ${describeError(rolePrivilegesResult.error)}`
+          )
+        }
 
         const directUserLinks = directUsersResult.data as Systemuserrolescollection[]
         const teamRoleLinks = teamsResult.data as Teamrolescollection[]
+        const rolePrivilegeLinks = rolePrivilegesResult.data as Roleprivilegescollection[]
         const teamIds = teamRoleLinks.map((link) => link.teamid)
 
         const teamMembershipsResult = teamIds.length
@@ -1043,6 +1084,20 @@ function App() {
         const inheritedUserIds = teamMemberships.map((membership) => membership.systemuserid)
         const users = await fetchUsersByIds(uniqueById([...directUserIds, ...inheritedUserIds].map((id) => ({ id }))).map((i) => i.id))
         const teams = await fetchTeamsByIds(uniqueById(teamIds.map((id) => ({ id }))).map((i) => i.id))
+
+        const privilegeIds = uniqueById(
+          rolePrivilegeLinks
+            .filter((link) => Number(link.privilegedepthmask ?? 0) > 0)
+            .map((link) => ({ id: link.privilegeid }))
+        ).map((item) => item.id)
+        const privileges = await fetchPrivilegesByIds(privilegeIds)
+        const relatedTables = Array.from(
+          new Set(
+            privileges
+              .map((privilege) => extractEntitySchemaFromPrivilege(privilege.name ?? ''))
+              .filter((value): value is string => Boolean(value))
+          )
+        ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
         const userById = new Map<string, Systemusers>(users.map((user) => [user.systemuserid, user]))
         const teamNameById = new Map<string, string>(
@@ -1077,6 +1132,7 @@ function App() {
         setRoleDetail({
           teams: teamSummaries,
           users: sortLabeledUsers([...labeledDirectUsers, ...labeledTeamUsers]),
+          relatedTables,
         })
       } catch (error) {
         console.error('[Role Detail] Load failed', error)
@@ -1950,6 +2006,20 @@ function App() {
                             </li>
                           ))}
                         </ul>
+                      )}
+                    </div>
+                    <div className="detail-section">
+                      <h4>Related Tables</h4>
+                      {roleDetail.relatedTables.length === 0 ? (
+                        <p className="muted">No table permissions found.</p>
+                      ) : (
+                        <div className="badge-list">
+                          {roleDetail.relatedTables.map((table) => (
+                            <span className="badge badge-table" key={table}>
+                              {table}
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </>
