@@ -1,0 +1,18 @@
+Agent Continuity
+Date: 2026-02-05
+
+Summary of important changes
+- User status display uses the formatted isdisabled value when available, defaults to Enabled, and the filter uses boolean values.
+- Field permissions filter uses raw GUID for _fieldsecurityprofileid_value to avoid OData guid literal errors.
+- Hide MS Users toggle is global (applies in users list and role/profile/team membership lists), uses fullname starting with #, and users fall back to primary email when name is blank.
+- User lists for role/profile memberships are sorted alphabetically by display name.
+- Left nav is now collapsible with icon-only mini mode; tab icons were added and Field Security Profiles uses a key icon.
+- The status pill in the left nav was removed.
+
+Files touched
+- src/App.tsx
+- src/App.css
+
+Notes
+- Build and deploy: npm run build then pac code push.
+- Current branch merged into main and pushed.
