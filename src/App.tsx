@@ -174,6 +174,7 @@ const sortLabeledUsers = (items: LabeledUser[]) =>
   })
 
 function App() {
+  const [navCollapsed, setNavCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState<'users' | 'teams' | 'roles' | 'profiles'>('users')
   const [userSearch, setUserSearch] = useState('')
   const [hideSystemUsers, setHideSystemUsers] = useState(true)
@@ -323,6 +324,25 @@ function App() {
       (record.businessunitidname as string | undefined) ||
       'Not loaded'
     )
+  }
+
+  const shouldHideSystemUser = (user?: Systemusers) =>
+    hideSystemUsers && (user?.fullname ?? '').startsWith('#')
+
+  const toLabeledUser = (
+    user: Systemusers | undefined,
+    id: string,
+    source: LabeledUser['source'],
+    teamName?: string
+  ): LabeledUser | null => {
+    if (!user || shouldHideSystemUser(user)) return null
+    return {
+      id,
+      name: getUserDisplayName(user),
+      email: user.internalemailaddress ?? '',
+      source,
+      teamName,
+    }
   }
 
   const applyUserFilters = (filter?: string) => {
@@ -853,15 +873,11 @@ function App() {
           profiles.map((profile) => [profile.fieldsecurityprofileid, profile])
         )
 
-        const members: LabeledUser[] = memberLinks.map((link) => {
-          const user = userById.get(link.systemuserid)
-          return {
-            id: link.systemuserid,
-            name: user?.fullname ?? 'Unnamed user',
-            email: user?.internalemailaddress ?? '',
-            source: 'direct',
-          }
-        })
+        const members = memberLinks.reduce<LabeledUser[]>((acc, link) => {
+          const labeled = toLabeledUser(userById.get(link.systemuserid), link.systemuserid, 'direct')
+          if (labeled) acc.push(labeled)
+          return acc
+        }, [])
 
         const teamRoles: LabeledRole[] = roleLinks.map((link) => {
           const role = roleById.get(link.roleid)
@@ -903,7 +919,7 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedTeamId])
+  }, [selectedTeamId, hideSystemUsers])
 
   useEffect(() => {
     if (!selectedRoleId) {
@@ -968,26 +984,22 @@ function App() {
           teams.map((team) => [team.teamid, team.name ?? 'Unnamed team'])
         )
 
-        const labeledDirectUsers: LabeledUser[] = directUserLinks.map((link) => {
-          const user = userById.get(link.systemuserid)
-          return {
-            id: link.systemuserid,
-            name: getUserDisplayName(user),
-            email: user?.internalemailaddress ?? '',
-            source: 'direct',
-          }
-        })
+        const labeledDirectUsers = directUserLinks.reduce<LabeledUser[]>((acc, link) => {
+          const labeled = toLabeledUser(userById.get(link.systemuserid), link.systemuserid, 'direct')
+          if (labeled) acc.push(labeled)
+          return acc
+        }, [])
 
-        const labeledTeamUsers: LabeledUser[] = teamMemberships.map((membership) => {
-          const user = userById.get(membership.systemuserid)
-          return {
-            id: membership.systemuserid,
-            name: getUserDisplayName(user),
-            email: user?.internalemailaddress ?? '',
-            source: 'team',
-            teamName: teamNameById.get(membership.teamid),
-          }
-        })
+        const labeledTeamUsers = teamMemberships.reduce<LabeledUser[]>((acc, membership) => {
+          const labeled = toLabeledUser(
+            userById.get(membership.systemuserid),
+            membership.systemuserid,
+            'team',
+            teamNameById.get(membership.teamid)
+          )
+          if (labeled) acc.push(labeled)
+          return acc
+        }, [])
 
         const teamSummaries: TeamSummary[] = teams.map((team) => ({
           id: team.teamid,
@@ -1015,7 +1027,7 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedRoleId])
+  }, [selectedRoleId, hideSystemUsers])
 
   useEffect(() => {
     if (!selectedProfileId) {
@@ -1077,7 +1089,7 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedProfileId])
+  }, [selectedProfileId, hideSystemUsers])
 
   useEffect(() => {
     if (!selectedProfileId) {
@@ -1149,26 +1161,22 @@ function App() {
           teams.map((team) => [team.teamid, team.name ?? 'Unnamed team'])
         )
 
-        const labeledDirectUsers: LabeledUser[] = directUserIds.map((userId) => {
-          const user = userById.get(userId)
-          return {
-            id: userId,
-            name: getUserDisplayName(user),
-            email: user?.internalemailaddress ?? '',
-            source: 'direct',
-          }
-        })
+        const labeledDirectUsers = directUserIds.reduce<LabeledUser[]>((acc, userId) => {
+          const labeled = toLabeledUser(userById.get(userId), userId, 'direct')
+          if (labeled) acc.push(labeled)
+          return acc
+        }, [])
 
-        const labeledTeamUsers: LabeledUser[] = teamMemberships.map((membership) => {
-          const user = userById.get(membership.systemuserid)
-          return {
-            id: membership.systemuserid,
-            name: getUserDisplayName(user),
-            email: user?.internalemailaddress ?? '',
-            source: 'team',
-            teamName: teamNameById.get(membership.teamid),
-          }
-        })
+        const labeledTeamUsers = teamMemberships.reduce<LabeledUser[]>((acc, membership) => {
+          const labeled = toLabeledUser(
+            userById.get(membership.systemuserid),
+            membership.systemuserid,
+            'team',
+            teamNameById.get(membership.teamid)
+          )
+          if (labeled) acc.push(labeled)
+          return acc
+        }, [])
 
         const teamSummaries: TeamSummary[] = teams.map((team) => ({
           id: team.teamid,
@@ -1262,8 +1270,18 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className="side-nav">
+      <aside className={`side-nav ${navCollapsed ? 'is-collapsed' : ''}`}>
         <div className="side-nav-header">
+          <button
+            className="nav-toggle"
+            type="button"
+            onClick={() => setNavCollapsed((prev) => !prev)}
+            aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+          >
+            <span className="nav-toggle-icon" aria-hidden>
+              {navCollapsed ? '>' : '<'}
+            </span>
+          </button>
           <p className="app-eyebrow">Dataverse Security Explorer</p>
           <h1>Simple Security</h1>
           <p className="app-subtitle">
@@ -1275,35 +1293,70 @@ function App() {
           <button
             className={`tab-button ${activeTab === 'users' ? 'is-active' : ''}`}
             onClick={() => handleTabChange('users')}
+            title="System Users"
           >
-            <span className="tab-title">System Users</span>
-            <span className="tab-meta">Pick a user to see direct roles and inherited roles.</span>
+            <span className="tab-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" role="presentation">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+              </svg>
+            </span>
+            <span className="tab-text">
+              <span className="tab-title">System Users</span>
+              <span className="tab-meta">Pick a user to see direct roles and inherited roles.</span>
+            </span>
           </button>
           <button
             className={`tab-button ${activeTab === 'teams' ? 'is-active' : ''}`}
             onClick={() => handleTabChange('teams')}
+            title="Teams"
           >
-            <span className="tab-title">Teams</span>
-            <span className="tab-meta">Browse team composition and types.</span>
+            <span className="tab-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" role="presentation">
+                <circle cx="8" cy="9" r="3" />
+                <circle cx="16" cy="9" r="3" />
+                <path d="M2 20c0-3.3 2.7-6 6-6" />
+                <path d="M22 20c0-3.3-2.7-6-6-6" />
+              </svg>
+            </span>
+            <span className="tab-text">
+              <span className="tab-title">Teams</span>
+              <span className="tab-meta">Browse team composition and types.</span>
+            </span>
           </button>
           <button
             className={`tab-button ${activeTab === 'roles' ? 'is-active' : ''}`}
             onClick={() => handleTabChange('roles')}
+            title="Security Roles"
           >
-            <span className="tab-title">Security Roles</span>
-            <span className="tab-meta">Audit direct and inherited assignments.</span>
+            <span className="tab-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" role="presentation">
+                <path d="M12 3l7 3v6c0 4.4-3 8.2-7 9-4-0.8-7-4.6-7-9V6l7-3z" />
+              </svg>
+            </span>
+            <span className="tab-text">
+              <span className="tab-title">Security Roles</span>
+              <span className="tab-meta">Audit direct and inherited assignments.</span>
+            </span>
           </button>
           <button
             className={`tab-button ${activeTab === 'profiles' ? 'is-active' : ''}`}
             onClick={() => handleTabChange('profiles')}
+            title="Field Security Profiles"
           >
-            <span className="tab-title">Field Security Profiles</span>
-            <span className="tab-meta">Review memberships and field permissions.</span>
+            <span className="tab-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" role="presentation">
+                <circle cx="7" cy="12" r="3" />
+                <path d="M10 12h10" />
+                <path d="M16 12v3" />
+                <path d="M20 12v2" />
+              </svg>
+            </span>
+            <span className="tab-text">
+              <span className="tab-title">Field Security Profiles</span>
+              <span className="tab-meta">Review memberships and field permissions.</span>
+            </span>
           </button>
-        </div>
-        <div className="app-status">
-          <span className="status-dot" />
-          Ready for MCP queries
         </div>
       </aside>
 
@@ -1314,86 +1367,90 @@ function App() {
               <h2>{tabTitles[activeTab]}</h2>
               <p>{tabDescriptions[activeTab]}</p>
             </div>
-            {activeTab === 'users' && (
-              <div className="panel-header-controls">
-                <input
-                  className="filter-input"
-                  type="search"
-                  placeholder="Filter users"
-                  value={userSearch}
-                  onChange={(event) => setUserSearch(event.target.value)}
-                />
+            <div className="panel-header-right">
+              {activeTab === 'users' && (
+                <div className="panel-header-controls">
+                  <input
+                    className="filter-input"
+                    type="search"
+                    placeholder="Filter users"
+                    value={userSearch}
+                    onChange={(event) => setUserSearch(event.target.value)}
+                  />
+                  <label className="toggle">
+                    <span>Status</span>
+                    <select
+                      className="filter-select"
+                      value={userStatusFilter}
+                      onChange={(event) =>
+                        setUserStatusFilter(event.target.value as 'enabled' | 'disabled' | 'all')
+                      }
+                    >
+                      <option value="enabled">Enabled only</option>
+                      <option value="disabled">Disabled only</option>
+                      <option value="all">All</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+              {activeTab === 'teams' && (
+                <div className="panel-header-controls">
+                  <input
+                    className="filter-input"
+                    type="search"
+                    placeholder="Filter teams"
+                    value={teamSearch}
+                    onChange={(event) => setTeamSearch(event.target.value)}
+                  />
+                  <label className="toggle">
+                    <span>Type</span>
+                    <select
+                      className="filter-select"
+                      value={teamTypeFilter}
+                      onChange={(event) =>
+                        setTeamTypeFilter(event.target.value as 'all' | '0' | '1' | '2' | '3')
+                      }
+                    >
+                      <option value="all">All types</option>
+                      <option value="0">Owner</option>
+                      <option value="1">Access</option>
+                      <option value="2">Security Group</option>
+                      <option value="3">Office Group</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+              <div className="panel-header-actions">
                 <label className="toggle">
                   <input
                     type="checkbox"
                     checked={hideSystemUsers}
                     onChange={(event) => setHideSystemUsers(event.target.checked)}
                   />
-                  <span>Hide system accounts</span>
+                  <span>Hide MS Users</span>
                 </label>
-                <label className="toggle">
-                  <span>Status</span>
-                  <select
-                    className="filter-select"
-                    value={userStatusFilter}
-                    onChange={(event) =>
-                      setUserStatusFilter(event.target.value as 'enabled' | 'disabled' | 'all')
-                    }
-                  >
-                    <option value="enabled">Enabled only</option>
-                    <option value="disabled">Disabled only</option>
-                    <option value="all">All</option>
-                  </select>
-                </label>
+                {activeTab === 'users' && (
+                  <button className="ghost-button" onClick={() => loadUsersPage('reset')} disabled={usersLoading}>
+                    Refresh
+                  </button>
+                )}
+                {activeTab === 'teams' && (
+                  <button className="ghost-button" onClick={() => loadTeamsPage('reset')} disabled={teamsLoading}>
+                    Refresh
+                  </button>
+                )}
+                {activeTab === 'roles' && (
+                  <button className="ghost-button" onClick={() => loadRolesPage('reset')} disabled={rolesLoading}>
+                    Refresh
+                  </button>
+                )}
+                {activeTab === 'profiles' && (
+                  <button className="ghost-button" onClick={() => loadProfilesPage('reset')} disabled={profilesLoading}>
+                    Refresh
+                  </button>
+                )}
               </div>
-            )}
-            {activeTab === 'teams' && (
-              <div className="panel-header-controls">
-                <input
-                  className="filter-input"
-                  type="search"
-                  placeholder="Filter teams"
-                  value={teamSearch}
-                  onChange={(event) => setTeamSearch(event.target.value)}
-                />
-                <label className="toggle">
-                  <span>Type</span>
-                  <select
-                    className="filter-select"
-                    value={teamTypeFilter}
-                    onChange={(event) =>
-                      setTeamTypeFilter(event.target.value as 'all' | '0' | '1' | '2' | '3')
-                    }
-                  >
-                    <option value="all">All types</option>
-                    <option value="0">Owner</option>
-                    <option value="1">Access</option>
-                    <option value="2">Security Group</option>
-                    <option value="3">Office Group</option>
-                  </select>
-                </label>
-              </div>
-            )}
-            {activeTab === 'users' && (
-              <button className="ghost-button" onClick={() => loadUsersPage('reset')} disabled={usersLoading}>
-                Refresh
-              </button>
-            )}
-            {activeTab === 'teams' && (
-              <button className="ghost-button" onClick={() => loadTeamsPage('reset')} disabled={teamsLoading}>
-                Refresh
-              </button>
-            )}
-            {activeTab === 'roles' && (
-              <button className="ghost-button" onClick={() => loadRolesPage('reset')} disabled={rolesLoading}>
-                Refresh
-              </button>
-            )}
-            {activeTab === 'profiles' && (
-              <button className="ghost-button" onClick={() => loadProfilesPage('reset')} disabled={profilesLoading}>
-                Refresh
-              </button>
-            )}
+            </div>
           </div>
           <div className="grid-table">
             <div className="grid-header" style={{ gridTemplateColumns: gridTemplate }}>
