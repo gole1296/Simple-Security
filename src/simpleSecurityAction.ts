@@ -22,19 +22,25 @@ const client = getClient(dataSourcesInfo) as unknown as {
   executeAsync: (request: unknown) => Promise<unknown>
 }
 
+const connectorDataSourceName =
+  'simplesecurityaction_5f9502eaa715bb753a_5fe3bd4ed65c4ae136'
+
 export const runSimpleSecurityAction = async (
   params: SimpleSecurityActionParams
 ): Promise<SimpleSecurityActionResponse> => {
   const result = (await client.executeAsync({
-    dataverseRequest: {
-      action: 'ope_simplesecurityaction',
+    connectorOperation: {
+      tableName: connectorDataSourceName,
+      operationName: 'SimpleSecurityAction',
       parameters: {
-        ope_Operation: params.operation,
-        ope_PrincipalType: params.principalType,
-        ope_PrincipalId: params.principalId,
-        ope_RelatedType: params.relatedType,
-        ope_RelatedId: params.relatedId,
-        ...(params.relationshipName ? { ope_RelationshipName: params.relationshipName } : {}),
+        body: {
+          ope_Operation: params.operation,
+          ope_PrincipalType: params.principalType,
+          ope_PrincipalId: params.principalId,
+          ope_RelatedType: params.relatedType,
+          ope_RelatedId: params.relatedId,
+          ...(params.relationshipName ? { ope_RelationshipName: params.relationshipName } : {}),
+        },
       },
     },
   })) as { success: boolean; data?: { ope_Success?: boolean }; error?: unknown }
