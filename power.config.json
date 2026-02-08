@@ -8,7 +8,16 @@
   "logoPath": "Default",
   "localAppUrl": "http://localhost:3000/",
   "region": "prod",
-  "connectionReferences": {},
+  "connectionReferences": {
+    "d6d713db-fdb2-44b6-a200-c6be873aa5cc": {
+      "id": "/providers/Microsoft.PowerApps/apis/shared_simplesecurityaction-5f9502eaa715bb753a-5fe3bd4ed65c4ae136",
+      "displayName": "SimpleSecurityAction",
+      "dataSources": [
+        "simplesecurityaction_5f9502eaa715bb753a_5fe3bd4ed65c4ae136"
+      ],
+      "dataSets": {}
+    }
+  },
   "databaseReferences": {
     "default.cds": {
       "databaseDetails": null,
@@ -91,6 +100,10 @@
         "roleprivileges": {
           "entitySetName": "roleprivilegescollection",
           "logicalName": "roleprivileges"
+        },
+        "simplesecurityactions": {
+          "entitySetName": "ope_simplesecurityactions",
+          "logicalName": "ope_simplesecurityaction"
         }
       },
       "actions": null

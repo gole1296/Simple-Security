@@ -7,31 +7,35 @@ Project context
 - Main UI: left-nav tabs, list grids with filters, sliding detail panel, independent scroll areas.
 
 Summary of important changes
-- Removed the in-app manage security modal and removed outbound Admin Center / Maker links (no org ID available in app context).
-- User status display uses the formatted isdisabled value when available, defaults to Enabled, and the filter uses boolean values.
-- Field permissions filter uses raw GUID for _fieldsecurityprofileid_value to avoid OData guid literal errors.
-- Hide MS Users toggle is global (applies in users list and role/profile/team membership lists), uses fullname starting with #, and users fall back to primary email when name is blank.
-- User lists for role/profile memberships are sorted alphabetically by display name.
-- Left nav is now collapsible with icon-only mini mode; tab icons were added and Field Security Profiles uses a key icon.
-- The status pill in the left nav was removed.
+- Added Manage modal overlays for Users, Teams, Roles, and Column Security Profiles with add/remove actions.
+- Added custom API caller via custom connector for ope_simplesecurityaction and wired manage actions to it.
+- Enforced business unit matching for user/team role and team membership associations.
+- Prevent removal of System Administrator role with message: "This application does not allow for removing System Administrator permissions. Please perform this action in the Power Platform Admin Center".
+- Manage modal includes search and add lists for roles, teams, users, and column security profiles.
+- Added connector data source entry in .power/schemas/appschemas/dataSourcesInfo.ts (auto-generated).
 
 Behavior details
-- Hide MS Users: checkbox now always visible in the header actions and filters out users whose fullname starts with #.
-- Role/Profile membership user lists: filtered by Hide MS Users and sorted alphabetically.
-- Field permissions lookup: use _fieldsecurityprofileid_value eq {guid} (no guid'...').
-- User status display: formatted value of isdisabled (Enabled/Disabled) when present; otherwise computed from raw value.
+- Manage actions call custom connector operation SimpleSecurityAction with body parameters (ope_Operation, ope_PrincipalType, ope_PrincipalId, ope_RelatedType, ope_RelatedId).
+- Manage modal refreshes detail data after action completes to keep direct/inherited lists in sync.
+- User search inside manage modal fetches users with same filters as list, supports hide MS users and status filter.
 
 Important files
-- src/App.tsx (filters, OData queries, UI layout, nav collapse state)
-- src/App.css (layout, nav collapse styles, tab icon styling)
-- .power/schemas/dataverse/users.Schema.json (reference for systemuser fields)
+- src/App.tsx (manage modal UI, manage actions, business unit validation)
+- src/App.css (manage modal styles, danger buttons)
+- src/simpleSecurityAction.ts (custom connector call)
+- .power/schemas/appschemas/dataSourcesInfo.ts (connector data source entry)
 
 Files touched
 - src/App.tsx
+- src/App.css
+- src/simpleSecurityAction.ts
 
 Notes
 - Build and deploy: npm run build then pac code push.
-- Current branch: feature/user-security-management (pushed to origin).
+- Current branch: security-management-api (pushed to origin).
+- Custom connector apiId: shared_simplesecurityaction-5f9502eaa715bb753a-5fe3bd4ed65c4ae136
+- Custom connector connectionId (env dd8f6081-3275-efb0-8e21-43ac6419d90a): 4f9a2fff43e54c848f71dc8dc50bbd2b
+- Dataverse custom API name: ope_simplesecurityaction (invoked via connector, not dataverseRequest action).
 
 Starting point for new changes
 - Check git status: git status -sb

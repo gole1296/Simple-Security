@@ -593,14 +593,18 @@ function App() {
 
     setManageActionBusy(true)
     try {
-      await runSimpleSecurityAction({
+      const result = await runSimpleSecurityAction({
         operation: input.operation,
         principalType: input.principalType,
         principalId: input.principalId,
         relatedType: input.relatedType,
         relatedId: input.relatedId,
       })
-      setManageActionNotice('Associations updated successfully.')
+      if (result.pending) {
+        setManageActionNotice(result.message ?? 'Request submitted. Updates may take a moment.')
+      } else {
+        setManageActionNotice('Associations updated successfully.')
+      }
       refreshActiveDetail(manageModal?.type)
     } catch (error) {
       console.error('[Manage] Action failed', error)
