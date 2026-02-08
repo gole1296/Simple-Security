@@ -60,8 +60,6 @@ export const runSimpleSecurityAction = async (
     ope_relatedtype: relatedTypeValues[params.relatedType],
     statuscode: STATUS_PENDING,
     statecode: STATE_ACTIVE,
-    ownerid: params.principalId,
-    owneridtype: params.principalType,
     ...(params.principalType === 'systemuser'
       ? { 'ope_PrincipalUser@odata.bind': `/systemusers(${params.principalId})` }
       : { 'ope_PrincipalTeam@odata.bind': `/teams(${params.principalId})` }),
