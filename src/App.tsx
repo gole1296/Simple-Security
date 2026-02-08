@@ -26,6 +26,7 @@ import type { Teammemberships } from './generated/models/TeammembershipsModel'
 import type { Teamprofilescollection } from './generated/models/TeamprofilescollectionModel'
 import type { Teamrolescollection } from './generated/models/TeamrolescollectionModel'
 import type { Teams } from './generated/models/TeamsModel'
+import { runSimpleSecurityAction } from './simpleSecurityAction'
 
 const PAGE_SIZE = 25
 const USER_PAGE_SIZE = 500
@@ -89,6 +90,18 @@ type LabeledProfile = {
   source: 'direct' | 'team'
   teamName?: string
 }
+
+type ManageModalType = 'user' | 'team' | 'role' | 'profile'
+
+type ManageModalState = {
+  type: ManageModalType
+  id: string
+}
+
+const SYSTEM_ADMIN_ROLE_NAME = 'System Administrator'
+const SYSTEM_ADMIN_BLOCK_MESSAGE =
+  'This application does not allow for removing System Administrator permissions. Please perform this action in the Power Platform Admin Center'
+const BUSINESS_UNIT_BLOCK_MESSAGE = 'This application blocks cross business unit associations.'
 
 const describeError = (error: unknown) => {
   if (!error) return 'Unknown error.'
@@ -256,6 +269,25 @@ function App() {
   const [profileMembershipsLoading, setProfileMembershipsLoading] = useState(false)
   const [profileMembershipsError, setProfileMembershipsError] = useState<string | null>(null)
 
+  const [userDetailRefreshToken, setUserDetailRefreshToken] = useState(0)
+  const [teamDetailRefreshToken, setTeamDetailRefreshToken] = useState(0)
+  const [roleDetailRefreshToken, setRoleDetailRefreshToken] = useState(0)
+  const [profileMembershipsRefreshToken, setProfileMembershipsRefreshToken] = useState(0)
+
+  const [manageModal, setManageModal] = useState<ManageModalState | null>(null)
+  const [manageSearch, setManageSearch] = useState({
+    users: '',
+    teams: '',
+    roles: '',
+    profiles: '',
+  })
+  const [manageActionBusy, setManageActionBusy] = useState(false)
+  const [manageActionError, setManageActionError] = useState<string | null>(null)
+  const [manageActionNotice, setManageActionNotice] = useState<string | null>(null)
+  const [manageUserResults, setManageUserResults] = useState<Systemusers[]>([])
+  const [manageUserResultsLoading, setManageUserResultsLoading] = useState(false)
+  const [manageUserResultsError, setManageUserResultsError] = useState<string | null>(null)
+
   const selectedUser = useMemo(
     () => users.find((user) => user.systemuserid === selectedUserId) ?? null,
     [users, selectedUserId]
@@ -306,6 +338,12 @@ function App() {
     return isUserDisabled(user) ? 'Disabled' : 'Enabled'
   }
 
+  const matchesUserStatusFilter = (user: Systemusers) => {
+    if (userStatusFilter === 'all') return true
+    const disabled = isUserDisabled(user)
+    return userStatusFilter === 'disabled' ? disabled : !disabled
+  }
+
   const getManagerName = (user: Systemusers) => {
     const record = user as unknown as Record<string, unknown>
     return (
@@ -343,6 +381,30 @@ function App() {
       (record.businessunitidname as string | undefined) ||
       'Not loaded'
     )
+  }
+
+  const getUserBusinessUnitId = (user?: Systemusers | null) => user?._businessunitid_value
+
+  const getTeamBusinessUnitId = (team?: Teams | null) => team?._businessunitid_value
+
+  const getRoleBusinessUnitId = (role?: Roles | null) => role?._businessunitid_value
+
+  const normalizeSearchValue = (value: string) => value.trim().toLowerCase()
+
+  const isSystemAdministratorRole = (name?: string) =>
+    normalizeSearchValue(name ?? '') === normalizeSearchValue(SYSTEM_ADMIN_ROLE_NAME)
+
+  const validateBusinessUnitAssociation = (
+    principalBusinessUnitId?: string,
+    relatedBusinessUnitId?: string
+  ) => {
+    if (!principalBusinessUnitId || !relatedBusinessUnitId) {
+      return 'Business unit data is not available for this record. Please refresh and try again.'
+    }
+    if (principalBusinessUnitId !== relatedBusinessUnitId) {
+      return BUSINESS_UNIT_BLOCK_MESSAGE
+    }
+    return null
   }
 
   const shouldHideSystemUser = (user?: Systemusers) =>
@@ -405,6 +467,147 @@ function App() {
       clauses.push(`(contains(name, '${term}') or contains(description, '${term}'))`)
     }
     return clauses.length ? clauses.join(' and ') : undefined
+  }
+
+  const openManageModal = (type: ManageModalType, id: string) => {
+    setManageModal({ type, id })
+    setManageActionError(null)
+    setManageActionNotice(null)
+    setManageSearch({ users: '', teams: '', roles: '', profiles: '' })
+    setManageUserResults([])
+    setManageUserResultsError(null)
+  }
+
+  const closeManageModal = () => {
+    setManageModal(null)
+    setManageActionError(null)
+    setManageActionNotice(null)
+    setManageUserResults([])
+    setManageUserResultsError(null)
+  }
+
+  const refreshActiveDetail = (type?: ManageModalType) => {
+    if (!type) return
+    switch (type) {
+      case 'user':
+        setUserDetailRefreshToken((prev) => prev + 1)
+        return
+      case 'team':
+        setTeamDetailRefreshToken((prev) => prev + 1)
+        return
+      case 'role':
+        setRoleDetailRefreshToken((prev) => prev + 1)
+        return
+      case 'profile':
+        setProfileMembershipsRefreshToken((prev) => prev + 1)
+        return
+      default:
+        return
+    }
+  }
+
+  const loadManageUsers = async () => {
+    const searchTerm = manageSearch.users.trim()
+    if (!searchTerm) {
+      setManageUserResults([])
+      setManageUserResultsError(null)
+      return
+    }
+
+    setManageUserResultsLoading(true)
+    setManageUserResultsError(null)
+    try {
+      const searchFilter = `(${[
+        `contains(fullname, '${escapeODataValue(searchTerm)}')`,
+        `contains(internalemailaddress, '${escapeODataValue(searchTerm)}')`,
+        `contains(address1_telephone1, '${escapeODataValue(searchTerm)}')`,
+      ].join(' or ')})`
+      const filter = applyUserFilters(searchFilter)
+
+      let skipToken: string | undefined
+      let allUsers: Systemusers[] = []
+
+      do {
+        const result = await SystemusersService.getAll({
+          select: [
+            'systemuserid',
+            'fullname',
+            'internalemailaddress',
+            'address1_telephone1',
+            '_businessunitid_value',
+            '_parentsystemuserid_value',
+            'isdisabled',
+          ],
+          filter,
+          top: USER_PAGE_SIZE,
+          skipToken,
+        })
+
+        if (!result.success) {
+          throw new Error(`Unable to load users. ${describeError(result.error)}`)
+        }
+
+        allUsers = [...allUsers, ...result.data]
+        skipToken = result.skipToken ?? undefined
+      } while (skipToken)
+
+      setManageUserResults(allUsers)
+    } catch (error) {
+      console.error('[Manage Users] Load failed', error)
+      setManageUserResultsError(describeError(error))
+    } finally {
+      setManageUserResultsLoading(false)
+    }
+  }
+
+  const handleManageAction = async (input: {
+    operation: 'associate' | 'disassociate'
+    principalType: 'systemuser' | 'team'
+    principalId: string
+    relatedType: 'role' | 'team' | 'columnsecurityprofile'
+    relatedId: string
+    relatedName?: string
+    principalBusinessUnitId?: string
+    relatedBusinessUnitId?: string
+  }) => {
+    setManageActionError(null)
+    setManageActionNotice(null)
+
+    if (input.operation === 'disassociate' && input.relatedType === 'role') {
+      if (isSystemAdministratorRole(input.relatedName)) {
+        setManageActionError(SYSTEM_ADMIN_BLOCK_MESSAGE)
+        return
+      }
+    }
+
+    if (input.operation === 'associate' && input.relatedType !== 'columnsecurityprofile') {
+      const businessUnitError = validateBusinessUnitAssociation(
+        input.principalBusinessUnitId,
+        input.relatedBusinessUnitId
+      )
+      if (businessUnitError) {
+        setManageActionError(businessUnitError)
+        return
+      }
+    }
+
+    setManageActionBusy(true)
+    try {
+      await runSimpleSecurityAction({
+        operation: input.operation,
+        principalType: input.principalType,
+        principalId: input.principalId,
+        relatedType: input.relatedType,
+        relatedId: input.relatedId,
+      })
+      setManageActionNotice('Associations updated successfully.')
+      refreshActiveDetail(manageModal?.type)
+    } catch (error) {
+      console.error('[Manage] Action failed', error)
+      setManageActionError(describeError(error))
+    } finally {
+      setManageActionBusy(false)
+    }
   }
 
   const filteredUsers = useMemo(() => {
@@ -475,6 +678,7 @@ function App() {
     setTeamDetail(null)
     setRoleDetail(null)
     setProfileMemberships(null)
+    closeManageModal()
   }
 
   const loadUsersPage = async (mode: 'reset' | 'more' = 'reset') => {
@@ -954,7 +1158,7 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedUserId])
+  }, [selectedUserId, userDetailRefreshToken])
 
   useEffect(() => {
     if (!selectedTeamId) {
@@ -1063,7 +1267,7 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedTeamId, hideSystemUsers, userStatusFilter])
+  }, [selectedTeamId, hideSystemUsers, userStatusFilter, teamDetailRefreshToken])
 
   useEffect(() => {
     if (!selectedRoleId) {
@@ -1197,7 +1401,7 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedRoleId, hideSystemUsers, userStatusFilter])
+  }, [selectedRoleId, hideSystemUsers, userStatusFilter, roleDetailRefreshToken])
 
   useEffect(() => {
     if (!selectedProfileId) {
@@ -1374,7 +1578,19 @@ function App() {
     return () => {
       isActive = false
     }
-  }, [selectedProfileId])
+  }, [selectedProfileId, profileMembershipsRefreshToken])
+
+  useEffect(() => {
+    if (!manageModal) return
+    if (
+      (manageModal.type === 'user' && !selectedUserId) ||
+      (manageModal.type === 'team' && !selectedTeamId) ||
+      (manageModal.type === 'role' && !selectedRoleId) ||
+      (manageModal.type === 'profile' && !selectedProfileId)
+    ) {
+      closeManageModal()
+    }
+  }, [manageModal, selectedUserId, selectedTeamId, selectedRoleId, selectedProfileId])
 
   const detailOpen =
     (activeTab === 'users' && Boolean(selectedUserId)) ||
@@ -1437,6 +1653,47 @@ function App() {
   } as const
 
   const gridTemplate = gridConfig[activeTab].template
+
+  const matchesSearchTerm = (term: string, ...values: Array<string | undefined>) => {
+    if (!term) return true
+    return values.some((value) => (value ?? '').toLowerCase().includes(term))
+  }
+
+  const userManageRoles = userDetail?.roles.filter((role) => role.source === 'direct') ?? []
+  const userManageTeams = userDetail?.teams ?? []
+  const userManageProfiles =
+    userDetail?.fieldSecurityProfiles.filter((profile) => profile.source === 'direct') ?? []
+
+  const teamManageMembers = teamDetail?.members ?? []
+  const teamManageRoles = teamDetail?.roles ?? []
+  const teamManageProfiles = teamDetail?.fieldSecurityProfiles ?? []
+
+  const roleManageTeams = roleDetail?.teams ?? []
+  const roleManageUsers = roleDetail?.users.filter((user) => user.source === 'direct') ?? []
+
+  const profileManageTeams = profileMemberships?.teams ?? []
+  const profileManageUsers =
+    profileMemberships?.users.filter((user) => user.source === 'direct') ?? []
+
+  const userRoleIds = new Set(userManageRoles.map((role) => role.id))
+  const userTeamIds = new Set(userManageTeams.map((team) => team.id))
+  const userProfileIds = new Set(userManageProfiles.map((profile) => profile.id))
+
+  const teamMemberIds = new Set(teamManageMembers.map((member) => member.id))
+  const teamRoleIds = new Set(teamManageRoles.map((role) => role.id))
+  const teamProfileIds = new Set(teamManageProfiles.map((profile) => profile.id))
+
+  const roleTeamIds = new Set(roleManageTeams.map((team) => team.id))
+  const roleUserIds = new Set(roleManageUsers.map((user) => user.id))
+
+  const profileTeamIds = new Set(profileManageTeams.map((team) => team.id))
+  const profileUserIds = new Set(profileManageUsers.map((user) => user.id))
+
+  const manageUserCandidates = manageUserResults.length ? manageUserResults : users
+  const manageUserSearchTerm = normalizeSearchValue(manageSearch.users)
+  const manageTeamSearchTerm = normalizeSearchValue(manageSearch.teams)
+  const manageRoleSearchTerm = normalizeSearchValue(manageSearch.roles)
+  const manageProfileSearchTerm = normalizeSearchValue(manageSearch.profiles)
 
   return (
     <div className="app-shell">
@@ -1797,17 +2054,26 @@ function App() {
                 <div className="detail-header">
                   <div className="detail-header-top">
                     <h3>User Details</h3>
-                    <button
-                      className="detail-close"
-                      type="button"
-                      onClick={() => setSelectedUserId(null)}
-                      aria-label="Close user details"
-                    >
-                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
-                        <path d="M6 6l12 12" />
-                        <path d="M18 6l-12 12" />
-                      </svg>
-                    </button>
+                    <div className="detail-header-actions">
+                      <button
+                        className="ghost-button small"
+                        type="button"
+                        onClick={() => openManageModal('user', selectedUser.systemuserid)}
+                      >
+                        Manage
+                      </button>
+                      <button
+                        className="detail-close"
+                        type="button"
+                        onClick={() => setSelectedUserId(null)}
+                        aria-label="Close user details"
+                      >
+                        <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                          <path d="M6 6l12 12" />
+                          <path d="M18 6l-12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <div className="detail-stack">
                     <div className="detail-line">
@@ -1904,17 +2170,26 @@ function App() {
                 <div className="detail-header">
                   <div className="detail-header-top">
                     <h3>Team Details</h3>
-                    <button
-                      className="detail-close"
-                      type="button"
-                      onClick={() => setSelectedTeamId(null)}
-                      aria-label="Close team details"
-                    >
-                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
-                        <path d="M6 6l12 12" />
-                        <path d="M18 6l-12 12" />
-                      </svg>
-                    </button>
+                    <div className="detail-header-actions">
+                      <button
+                        className="ghost-button small"
+                        type="button"
+                        onClick={() => openManageModal('team', selectedTeam.teamid)}
+                      >
+                        Manage
+                      </button>
+                      <button
+                        className="detail-close"
+                        type="button"
+                        onClick={() => setSelectedTeamId(null)}
+                        aria-label="Close team details"
+                      >
+                        <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                          <path d="M6 6l12 12" />
+                          <path d="M18 6l-12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <div className="detail-stack">
                     <div className="detail-line">
@@ -2005,17 +2280,26 @@ function App() {
                 <div className="detail-header">
                   <div className="detail-header-top">
                     <h3>{selectedRole.name ?? 'Unnamed role'}</h3>
-                    <button
-                      className="detail-close"
-                      type="button"
-                      onClick={() => setSelectedRoleId(null)}
-                      aria-label="Close role details"
-                    >
-                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
-                        <path d="M6 6l12 12" />
-                        <path d="M18 6l-12 12" />
-                      </svg>
-                    </button>
+                    <div className="detail-header-actions">
+                      <button
+                        className="ghost-button small"
+                        type="button"
+                        onClick={() => openManageModal('role', selectedRole.roleid)}
+                      >
+                        Manage
+                      </button>
+                      <button
+                        className="detail-close"
+                        type="button"
+                        onClick={() => setSelectedRoleId(null)}
+                        aria-label="Close role details"
+                      >
+                        <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                          <path d="M6 6l12 12" />
+                          <path d="M18 6l-12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <p>{selectedRole.description ?? 'No description'}</p>
                 </div>
@@ -2088,17 +2372,26 @@ function App() {
                 <div className="detail-header">
                   <div className="detail-header-top">
                     <h3>{selectedProfile.name ?? 'Unnamed profile'}</h3>
-                    <button
-                      className="detail-close"
-                      type="button"
-                      onClick={() => setSelectedProfileId(null)}
-                      aria-label="Close profile details"
-                    >
-                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
-                        <path d="M6 6l12 12" />
-                        <path d="M18 6l-12 12" />
-                      </svg>
-                    </button>
+                    <div className="detail-header-actions">
+                      <button
+                        className="ghost-button small"
+                        type="button"
+                        onClick={() => openManageModal('profile', selectedProfile.fieldsecurityprofileid)}
+                      >
+                        Manage
+                      </button>
+                      <button
+                        className="detail-close"
+                        type="button"
+                        onClick={() => setSelectedProfileId(null)}
+                        aria-label="Close profile details"
+                      >
+                        <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                          <path d="M6 6l12 12" />
+                          <path d="M18 6l-12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <p>{selectedProfile.description ?? 'No description'}</p>
                 </div>
@@ -2186,6 +2479,1074 @@ function App() {
             </div>
           )}
         </aside>
+
+        {manageModal && (
+          <div className="manage-modal">
+            <div className="manage-modal-backdrop" onClick={closeManageModal} aria-hidden />
+            <div className="manage-modal-card" role="dialog" aria-modal="true">
+              {manageModal.type === 'user' && selectedUser && (
+                <>
+                  <div className="manage-modal-header">
+                    <div>
+                      <p className="manage-eyebrow">Manage User</p>
+                      <h3>{selectedUser.fullname ?? 'Unnamed user'}</h3>
+                    </div>
+                    <button
+                      className="detail-close"
+                      type="button"
+                      onClick={closeManageModal}
+                      aria-label="Close manage user"
+                    >
+                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                        <path d="M6 6l12 12" />
+                        <path d="M18 6l-12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="manage-modal-summary detail-stack">
+                    <div className="detail-line">
+                      <span className="detail-label">Business Unit</span>
+                      <span>{getBusinessUnitName(selectedUser)}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Primary Email</span>
+                      <span>{selectedUser.internalemailaddress ?? 'No email address'}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Status</span>
+                      <span>{getUserStatusDisplay(selectedUser)}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Manager Name</span>
+                      <span>{getManagerName(selectedUser)}</span>
+                    </div>
+                  </div>
+                  {manageActionError && <div className="notice error">{manageActionError}</div>}
+                  {manageActionNotice && <div className="notice">{manageActionNotice}</div>}
+                  <div className="manage-sections">
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Security Roles</h4>
+                      </div>
+                      {userManageRoles.length === 0 ? (
+                        <p className="muted">No roles assigned.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {userManageRoles.map((role) => (
+                            <li key={role.id} className="manage-row">
+                              <div>
+                                <span>{role.name}</span>
+                                {isSystemAdministratorRole(role.name) && (
+                                  <span className="manage-meta">Protected</span>
+                                )}
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy || isSystemAdministratorRole(role.name)}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'systemuser',
+                                    principalId: selectedUser.systemuserid,
+                                    relatedType: 'role',
+                                    relatedId: role.id,
+                                    relatedName: role.name,
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add roles</summary>
+                        <div className="manage-search">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search roles"
+                            value={manageSearch.roles}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, roles: event.target.value }))
+                            }
+                          />
+                        </div>
+                        <ul className="manage-list">
+                          {roles
+                            .filter((role) => !userRoleIds.has(role.roleid))
+                            .filter((role) =>
+                              matchesSearchTerm(
+                                manageRoleSearchTerm,
+                                role.name ?? '',
+                                role.description ?? ''
+                              )
+                            )
+                            .map((role) => (
+                              <li key={role.roleid} className="manage-row">
+                                <div>
+                                  <span>{role.name ?? 'Unnamed role'}</span>
+                                  <span className="manage-meta">{getRoleBusinessUnitName(role)}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'systemuser',
+                                      principalId: selectedUser.systemuserid,
+                                      relatedType: 'role',
+                                      relatedId: role.roleid,
+                                      relatedName: role.name ?? '',
+                                      principalBusinessUnitId: getUserBusinessUnitId(selectedUser),
+                                      relatedBusinessUnitId: getRoleBusinessUnitId(role),
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Team Memberships</h4>
+                      </div>
+                      {userManageTeams.length === 0 ? (
+                        <p className="muted">No team memberships.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {userManageTeams.map((team) => (
+                            <li key={team.id} className="manage-row">
+                              <div>
+                                <span>{team.name}</span>
+                                <span className="manage-meta">
+                                  {team.teamType ? `Type: ${team.teamType}` : 'Team'}
+                                </span>
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'systemuser',
+                                    principalId: selectedUser.systemuserid,
+                                    relatedType: 'team',
+                                    relatedId: team.id,
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add teams</summary>
+                        <div className="manage-search">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search teams"
+                            value={manageSearch.teams}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, teams: event.target.value }))
+                            }
+                          />
+                        </div>
+                        <ul className="manage-list">
+                          {teams
+                            .filter((team) => !userTeamIds.has(team.teamid))
+                            .filter((team) =>
+                              matchesSearchTerm(
+                                manageTeamSearchTerm,
+                                team.name ?? '',
+                                team.description ?? ''
+                              )
+                            )
+                            .map((team) => (
+                              <li key={team.teamid} className="manage-row">
+                                <div>
+                                  <span>{team.name ?? 'Unnamed team'}</span>
+                                  <span className="manage-meta">{teamTypeLabel(String(team.teamtype ?? ''))}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'systemuser',
+                                      principalId: selectedUser.systemuserid,
+                                      relatedType: 'team',
+                                      relatedId: team.teamid,
+                                      principalBusinessUnitId: getUserBusinessUnitId(selectedUser),
+                                      relatedBusinessUnitId: getTeamBusinessUnitId(team),
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Column Security Profiles</h4>
+                      </div>
+                      {userManageProfiles.length === 0 ? (
+                        <p className="muted">No field security profiles assigned.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {userManageProfiles.map((profile) => (
+                            <li key={profile.id} className="manage-row">
+                              <div>
+                                <span>{profile.name}</span>
+                                <span className="manage-meta">{profile.description ?? 'No description'}</span>
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'systemuser',
+                                    principalId: selectedUser.systemuserid,
+                                    relatedType: 'columnsecurityprofile',
+                                    relatedId: profile.id,
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add profiles</summary>
+                        <div className="manage-search">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search profiles"
+                            value={manageSearch.profiles}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, profiles: event.target.value }))
+                            }
+                          />
+                        </div>
+                        <ul className="manage-list">
+                          {profiles
+                            .filter((profile) => !userProfileIds.has(profile.fieldsecurityprofileid))
+                            .filter((profile) =>
+                              matchesSearchTerm(
+                                manageProfileSearchTerm,
+                                profile.name ?? '',
+                                profile.description ?? ''
+                              )
+                            )
+                            .map((profile) => (
+                              <li key={profile.fieldsecurityprofileid} className="manage-row">
+                                <div>
+                                  <span>{profile.name ?? 'Unnamed profile'}</span>
+                                  <span className="manage-meta">{profile.description ?? 'No description'}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'systemuser',
+                                      principalId: selectedUser.systemuserid,
+                                      relatedType: 'columnsecurityprofile',
+                                      relatedId: profile.fieldsecurityprofileid,
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+                  </div>
+                </>
+              )}
+
+              {manageModal.type === 'team' && selectedTeam && (
+                <>
+                  <div className="manage-modal-header">
+                    <div>
+                      <p className="manage-eyebrow">Manage Team</p>
+                      <h3>{selectedTeam.name ?? 'Unnamed team'}</h3>
+                    </div>
+                    <button
+                      className="detail-close"
+                      type="button"
+                      onClick={closeManageModal}
+                      aria-label="Close manage team"
+                    >
+                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                        <path d="M6 6l12 12" />
+                        <path d="M18 6l-12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="manage-modal-summary detail-stack">
+                    <div className="detail-line">
+                      <span className="detail-label">Team Type</span>
+                      <span>{teamTypeLabel(String(selectedTeam.teamtype ?? ''))}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Business Unit</span>
+                      <span>{getTeamBusinessUnitName(selectedTeam)}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Administrator</span>
+                      <span>{getTeamAdminName(selectedTeam)}</span>
+                    </div>
+                  </div>
+                  {manageActionError && <div className="notice error">{manageActionError}</div>}
+                  {manageActionNotice && <div className="notice">{manageActionNotice}</div>}
+                  <div className="manage-sections">
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Team Members</h4>
+                      </div>
+                      {teamManageMembers.length === 0 ? (
+                        <p className="muted">No members assigned.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {teamManageMembers.map((member) => (
+                            <li key={member.id} className="manage-row">
+                              <div>
+                                <span>{member.name}</span>
+                                <span className="manage-meta">{member.email ?? 'No email'}</span>
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'systemuser',
+                                    principalId: member.id,
+                                    relatedType: 'team',
+                                    relatedId: selectedTeam.teamid,
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add users</summary>
+                        <div className="manage-search manage-search-row">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search users"
+                            value={manageSearch.users}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, users: event.target.value }))
+                            }
+                          />
+                          <button
+                            className="ghost-button small"
+                            type="button"
+                            onClick={loadManageUsers}
+                            disabled={manageUserResultsLoading || manageActionBusy}
+                          >
+                            {manageUserResultsLoading ? 'Searching...' : 'Search'}
+                          </button>
+                        </div>
+                        {manageUserResultsError && (
+                          <div className="notice error">{manageUserResultsError}</div>
+                        )}
+                        <ul className="manage-list">
+                          {manageUserCandidates
+                            .filter((user) => !teamMemberIds.has(user.systemuserid))
+                            .filter((user) => matchesUserStatusFilter(user))
+                            .filter((user) => !shouldHideSystemUser(user))
+                            .filter((user) =>
+                              matchesSearchTerm(
+                                manageUserSearchTerm,
+                                user.fullname ?? '',
+                                user.internalemailaddress ?? ''
+                              )
+                            )
+                            .map((user) => (
+                              <li key={user.systemuserid} className="manage-row">
+                                <div>
+                                  <span>{getUserDisplayName(user)}</span>
+                                  <span className="manage-meta">{user.internalemailaddress ?? 'No email'}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'systemuser',
+                                      principalId: user.systemuserid,
+                                      relatedType: 'team',
+                                      relatedId: selectedTeam.teamid,
+                                      principalBusinessUnitId: getUserBusinessUnitId(user),
+                                      relatedBusinessUnitId: getTeamBusinessUnitId(selectedTeam),
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Security Roles</h4>
+                      </div>
+                      {teamManageRoles.length === 0 ? (
+                        <p className="muted">No roles assigned.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {teamManageRoles.map((role) => (
+                            <li key={role.id} className="manage-row">
+                              <div>
+                                <span>{role.name}</span>
+                                <span className="manage-meta">{role.description ?? 'No description'}</span>
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy || isSystemAdministratorRole(role.name)}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'team',
+                                    principalId: selectedTeam.teamid,
+                                    relatedType: 'role',
+                                    relatedId: role.id,
+                                    relatedName: role.name,
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add roles</summary>
+                        <div className="manage-search">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search roles"
+                            value={manageSearch.roles}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, roles: event.target.value }))
+                            }
+                          />
+                        </div>
+                        <ul className="manage-list">
+                          {roles
+                            .filter((role) => !teamRoleIds.has(role.roleid))
+                            .filter((role) =>
+                              matchesSearchTerm(
+                                manageRoleSearchTerm,
+                                role.name ?? '',
+                                role.description ?? ''
+                              )
+                            )
+                            .map((role) => (
+                              <li key={role.roleid} className="manage-row">
+                                <div>
+                                  <span>{role.name ?? 'Unnamed role'}</span>
+                                  <span className="manage-meta">{getRoleBusinessUnitName(role)}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'team',
+                                      principalId: selectedTeam.teamid,
+                                      relatedType: 'role',
+                                      relatedId: role.roleid,
+                                      relatedName: role.name ?? '',
+                                      principalBusinessUnitId: getTeamBusinessUnitId(selectedTeam),
+                                      relatedBusinessUnitId: getRoleBusinessUnitId(role),
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Column Security Profiles</h4>
+                      </div>
+                      {teamManageProfiles.length === 0 ? (
+                        <p className="muted">No field security profiles assigned.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {teamManageProfiles.map((profile) => (
+                            <li key={profile.id} className="manage-row">
+                              <div>
+                                <span>{profile.name}</span>
+                                <span className="manage-meta">{profile.description ?? 'No description'}</span>
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'team',
+                                    principalId: selectedTeam.teamid,
+                                    relatedType: 'columnsecurityprofile',
+                                    relatedId: profile.id,
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add profiles</summary>
+                        <div className="manage-search">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search profiles"
+                            value={manageSearch.profiles}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, profiles: event.target.value }))
+                            }
+                          />
+                        </div>
+                        <ul className="manage-list">
+                          {profiles
+                            .filter((profile) => !teamProfileIds.has(profile.fieldsecurityprofileid))
+                            .filter((profile) =>
+                              matchesSearchTerm(
+                                manageProfileSearchTerm,
+                                profile.name ?? '',
+                                profile.description ?? ''
+                              )
+                            )
+                            .map((profile) => (
+                              <li key={profile.fieldsecurityprofileid} className="manage-row">
+                                <div>
+                                  <span>{profile.name ?? 'Unnamed profile'}</span>
+                                  <span className="manage-meta">{profile.description ?? 'No description'}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'team',
+                                      principalId: selectedTeam.teamid,
+                                      relatedType: 'columnsecurityprofile',
+                                      relatedId: profile.fieldsecurityprofileid,
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+                  </div>
+                </>
+              )}
+
+              {manageModal.type === 'role' && selectedRole && (
+                <>
+                  <div className="manage-modal-header">
+                    <div>
+                      <p className="manage-eyebrow">Manage Role</p>
+                      <h3>{selectedRole.name ?? 'Unnamed role'}</h3>
+                    </div>
+                    <button
+                      className="detail-close"
+                      type="button"
+                      onClick={closeManageModal}
+                      aria-label="Close manage role"
+                    >
+                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                        <path d="M6 6l12 12" />
+                        <path d="M18 6l-12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="manage-modal-summary detail-stack">
+                    <div className="detail-line">
+                      <span className="detail-label">Business Unit</span>
+                      <span>{getRoleBusinessUnitName(selectedRole)}</span>
+                    </div>
+                    <div className="detail-line">
+                      <span className="detail-label">Description</span>
+                      <span>{selectedRole.description ?? 'No description'}</span>
+                    </div>
+                  </div>
+                  {manageActionError && <div className="notice error">{manageActionError}</div>}
+                  {manageActionNotice && <div className="notice">{manageActionNotice}</div>}
+                  <div className="manage-sections">
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Users</h4>
+                      </div>
+                      {roleManageUsers.length === 0 ? (
+                        <p className="muted">No users assigned.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {roleManageUsers.map((user) => (
+                            <li key={user.id} className="manage-row">
+                              <div>
+                                <span>{user.name}</span>
+                                <span className="manage-meta">{user.email ?? 'No email'}</span>
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy || isSystemAdministratorRole(selectedRole.name)}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'systemuser',
+                                    principalId: user.id,
+                                    relatedType: 'role',
+                                    relatedId: selectedRole.roleid,
+                                    relatedName: selectedRole.name ?? '',
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add users</summary>
+                        <div className="manage-search manage-search-row">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search users"
+                            value={manageSearch.users}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, users: event.target.value }))
+                            }
+                          />
+                          <button
+                            className="ghost-button small"
+                            type="button"
+                            onClick={loadManageUsers}
+                            disabled={manageUserResultsLoading || manageActionBusy}
+                          >
+                            {manageUserResultsLoading ? 'Searching...' : 'Search'}
+                          </button>
+                        </div>
+                        {manageUserResultsError && (
+                          <div className="notice error">{manageUserResultsError}</div>
+                        )}
+                        <ul className="manage-list">
+                          {manageUserCandidates
+                            .filter((user) => !roleUserIds.has(user.systemuserid))
+                            .filter((user) => matchesUserStatusFilter(user))
+                            .filter((user) => !shouldHideSystemUser(user))
+                            .filter((user) =>
+                              matchesSearchTerm(
+                                manageUserSearchTerm,
+                                user.fullname ?? '',
+                                user.internalemailaddress ?? ''
+                              )
+                            )
+                            .map((user) => (
+                              <li key={user.systemuserid} className="manage-row">
+                                <div>
+                                  <span>{getUserDisplayName(user)}</span>
+                                  <span className="manage-meta">{user.internalemailaddress ?? 'No email'}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'systemuser',
+                                      principalId: user.systemuserid,
+                                      relatedType: 'role',
+                                      relatedId: selectedRole.roleid,
+                                      relatedName: selectedRole.name ?? '',
+                                      principalBusinessUnitId: getUserBusinessUnitId(user),
+                                      relatedBusinessUnitId: getRoleBusinessUnitId(selectedRole),
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Teams</h4>
+                      </div>
+                      {roleManageTeams.length === 0 ? (
+                        <p className="muted">No teams assigned.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {roleManageTeams.map((team) => (
+                            <li key={team.id} className="manage-row">
+                              <div>
+                                <span>{team.name}</span>
+                                <span className="manage-meta">{team.teamType ?? 'Team'}</span>
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy || isSystemAdministratorRole(selectedRole.name)}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'team',
+                                    principalId: team.id,
+                                    relatedType: 'role',
+                                    relatedId: selectedRole.roleid,
+                                    relatedName: selectedRole.name ?? '',
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add teams</summary>
+                        <div className="manage-search">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search teams"
+                            value={manageSearch.teams}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, teams: event.target.value }))
+                            }
+                          />
+                        </div>
+                        <ul className="manage-list">
+                          {teams
+                            .filter((team) => !roleTeamIds.has(team.teamid))
+                            .filter((team) =>
+                              matchesSearchTerm(
+                                manageTeamSearchTerm,
+                                team.name ?? '',
+                                team.description ?? ''
+                              )
+                            )
+                            .map((team) => (
+                              <li key={team.teamid} className="manage-row">
+                                <div>
+                                  <span>{team.name ?? 'Unnamed team'}</span>
+                                  <span className="manage-meta">{teamTypeLabel(String(team.teamtype ?? ''))}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'team',
+                                      principalId: team.teamid,
+                                      relatedType: 'role',
+                                      relatedId: selectedRole.roleid,
+                                      relatedName: selectedRole.name ?? '',
+                                      principalBusinessUnitId: getTeamBusinessUnitId(team),
+                                      relatedBusinessUnitId: getRoleBusinessUnitId(selectedRole),
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+                  </div>
+                </>
+              )}
+
+              {manageModal.type === 'profile' && selectedProfile && (
+                <>
+                  <div className="manage-modal-header">
+                    <div>
+                      <p className="manage-eyebrow">Manage Column Security Profile</p>
+                      <h3>{selectedProfile.name ?? 'Unnamed profile'}</h3>
+                    </div>
+                    <button
+                      className="detail-close"
+                      type="button"
+                      onClick={closeManageModal}
+                      aria-label="Close manage profile"
+                    >
+                      <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                        <path d="M6 6l12 12" />
+                        <path d="M18 6l-12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="manage-modal-summary detail-stack">
+                    <div className="detail-line">
+                      <span className="detail-label">Description</span>
+                      <span>{selectedProfile.description ?? 'No description'}</span>
+                    </div>
+                  </div>
+                  {manageActionError && <div className="notice error">{manageActionError}</div>}
+                  {manageActionNotice && <div className="notice">{manageActionNotice}</div>}
+                  <div className="manage-sections">
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Users</h4>
+                      </div>
+                      {profileManageUsers.length === 0 ? (
+                        <p className="muted">No users assigned.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {profileManageUsers.map((user) => (
+                            <li key={user.id} className="manage-row">
+                              <div>
+                                <span>{user.name}</span>
+                                <span className="manage-meta">{user.email ?? 'No email'}</span>
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'systemuser',
+                                    principalId: user.id,
+                                    relatedType: 'columnsecurityprofile',
+                                    relatedId: selectedProfile.fieldsecurityprofileid,
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add users</summary>
+                        <div className="manage-search manage-search-row">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search users"
+                            value={manageSearch.users}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, users: event.target.value }))
+                            }
+                          />
+                          <button
+                            className="ghost-button small"
+                            type="button"
+                            onClick={loadManageUsers}
+                            disabled={manageUserResultsLoading || manageActionBusy}
+                          >
+                            {manageUserResultsLoading ? 'Searching...' : 'Search'}
+                          </button>
+                        </div>
+                        {manageUserResultsError && (
+                          <div className="notice error">{manageUserResultsError}</div>
+                        )}
+                        <ul className="manage-list">
+                          {manageUserCandidates
+                            .filter((user) => !profileUserIds.has(user.systemuserid))
+                            .filter((user) => matchesUserStatusFilter(user))
+                            .filter((user) => !shouldHideSystemUser(user))
+                            .filter((user) =>
+                              matchesSearchTerm(
+                                manageUserSearchTerm,
+                                user.fullname ?? '',
+                                user.internalemailaddress ?? ''
+                              )
+                            )
+                            .map((user) => (
+                              <li key={user.systemuserid} className="manage-row">
+                                <div>
+                                  <span>{getUserDisplayName(user)}</span>
+                                  <span className="manage-meta">{user.internalemailaddress ?? 'No email'}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'systemuser',
+                                      principalId: user.systemuserid,
+                                      relatedType: 'columnsecurityprofile',
+                                      relatedId: selectedProfile.fieldsecurityprofileid,
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+
+                    <section className="manage-section">
+                      <div className="manage-section-header">
+                        <h4>Teams</h4>
+                      </div>
+                      {profileManageTeams.length === 0 ? (
+                        <p className="muted">No teams assigned.</p>
+                      ) : (
+                        <ul className="manage-list">
+                          {profileManageTeams.map((team) => (
+                            <li key={team.id} className="manage-row">
+                              <div>
+                                <span>{team.name}</span>
+                                <span className="manage-meta">{team.teamType ?? 'Team'}</span>
+                              </div>
+                              <button
+                                className="ghost-button small danger"
+                                type="button"
+                                disabled={manageActionBusy}
+                                onClick={() =>
+                                  handleManageAction({
+                                    operation: 'disassociate',
+                                    principalType: 'team',
+                                    principalId: team.id,
+                                    relatedType: 'columnsecurityprofile',
+                                    relatedId: selectedProfile.fieldsecurityprofileid,
+                                  })
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <details className="manage-expand">
+                        <summary>Add teams</summary>
+                        <div className="manage-search">
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search teams"
+                            value={manageSearch.teams}
+                            onChange={(event) =>
+                              setManageSearch((prev) => ({ ...prev, teams: event.target.value }))
+                            }
+                          />
+                        </div>
+                        <ul className="manage-list">
+                          {teams
+                            .filter((team) => !profileTeamIds.has(team.teamid))
+                            .filter((team) =>
+                              matchesSearchTerm(
+                                manageTeamSearchTerm,
+                                team.name ?? '',
+                                team.description ?? ''
+                              )
+                            )
+                            .map((team) => (
+                              <li key={team.teamid} className="manage-row">
+                                <div>
+                                  <span>{team.name ?? 'Unnamed team'}</span>
+                                  <span className="manage-meta">{teamTypeLabel(String(team.teamtype ?? ''))}</span>
+                                </div>
+                                <button
+                                  className="ghost-button small"
+                                  type="button"
+                                  disabled={manageActionBusy}
+                                  onClick={() =>
+                                    handleManageAction({
+                                      operation: 'associate',
+                                      principalType: 'team',
+                                      principalId: team.teamid,
+                                      relatedType: 'columnsecurityprofile',
+                                      relatedId: selectedProfile.fieldsecurityprofileid,
+                                    })
+                                  }
+                                >
+                                  Add
+                                </button>
+                              </li>
+                            ))}
+                        </ul>
+                      </details>
+                    </section>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )
