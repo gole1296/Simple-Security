@@ -73,3 +73,68 @@ export default defineConfig([
   },
 ])
 ```
+
+## Deployment and Configuration
+
+### Prerequisites
+- Power Platform environment with Dataverse.
+- The custom API `ope_simplesecurityaction` deployed in the target environment (included in the solution with this app).
+- Power Platform CLI installed and authenticated (`pac auth create`).
+
+### Azure App Registration (for Custom Connector OAuth)
+The custom connector uses Azure AD OAuth to call Dataverse in the current user context.
+
+1. Create or use an Azure App Registration.
+2. Add a Web redirect URI for the connector (shown in the connector security screen). Example:
+   - `https://global.consent.azure-apim.net/redirect/simplesecurityaction-<connector-guid>`
+3. Ensure the App Registration has delegated permissions for Dataverse:
+   - Resource: `https://<org>.api.crm.dynamics.com/.default`
+
+### Create the Custom Connector
+1. Power Apps Maker Portal -> Custom connectors -> New custom connector -> Create from blank.
+2. Name: `SimpleSecurityAction`.
+3. Host: `<org>.api.crm.dynamics.com` (no protocol or path).
+4. Base URL: `/`.
+5. Security: OAuth 2.0 (Azure AD) using the App Registration above.
+6. Definition -> Add action:
+   - Operation ID: `SimpleSecurityAction`
+   - Verb: `POST`
+   - URL: `https://<org>.api.crm.dynamics.com/api/data/v9.2/ope_simplesecurityaction`
+   - Body example:
+     ```json
+     {
+       "ope_Operation": "associate",
+       "ope_PrincipalType": "systemuser",
+       "ope_PrincipalId": "00000000-0000-0000-0000-000000000000",
+       "ope_RelatedType": "role",
+       "ope_RelatedId": "00000000-0000-0000-0000-000000000000"
+     }
+     ```
+   - Response example:
+     ```json
+     { "ope_Success": true }
+     ```
+7. Save and test the connector.
+
+### Register the Connector in the Code App
+After creating the connector and connection:
+
+1. Get the connector apiId and the connectionId from the maker portal URLs.
+2. Register it in the code app:
+   ```bash
+   pac code add-data-source -a "<connectorApiId>" -c "<connectionId>"
+   ```
+
+### Build and Push
+```bash
+npm run build
+pac code push
+```
+
+### Deployment to Another Tenant/Environment
+- Import the solution that contains the app and the `ope_simplesecurityaction` custom API.
+- Create the custom connector in the target environment using the target org host.
+- Create a connection for the custom connector.
+- Map the connection reference during import.
+
+The app uses the connector to call `ope_simplesecurityaction` in the current user context, so users must have Dataverse privileges for the association/disassociation actions.
