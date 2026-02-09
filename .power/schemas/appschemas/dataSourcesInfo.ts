@@ -123,36 +123,5 @@ export const dataSourcesInfo = {
     "primaryKey": "systemuserid",
     "dataSourceType": "Dataverse",
     "apis": {}
-  },
-  "simplesecurityaction_5f9502eaa715bb753a_5fe3bd4ed65c4ae136": {
-    "tableId": "",
-    "version": "",
-    "primaryKey": "",
-    "dataSourceType": "Connector",
-    "apis": {
-      "SimpleSecurityAction": {
-        "path": "/{connectionId}/api/data/v9.2/ope_simplesecurityaction",
-        "method": "POST",
-        "parameters": [
-          {
-            "name": "connectionId",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "name": "body",
-            "in": "body",
-            "required": false,
-            "type": "object"
-          }
-        ],
-        "responseInfo": {
-          "default": {
-            "type": "object"
-          }
-        }
-      }
-    }
   }
 };

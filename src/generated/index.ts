@@ -14,7 +14,6 @@ export * as PrincipalobjectattributeaccesssetModel from './models/Principalobjec
 export * as PrivilegesModel from './models/PrivilegesModel';
 export * as RoleprivilegescollectionModel from './models/RoleprivilegescollectionModel';
 export * as RolesModel from './models/RolesModel';
-export * as SimpleSecurityActionModel from './models/SimpleSecurityActionModel';
 export * as SystemuserprofilescollectionModel from './models/SystemuserprofilescollectionModel';
 export * as SystemuserrolescollectionModel from './models/SystemuserrolescollectionModel';
 export * as SystemusersModel from './models/SystemusersModel';
@@ -34,7 +33,6 @@ export * from './services/PrincipalobjectattributeaccesssetService';
 export * from './services/PrivilegesService';
 export * from './services/RoleprivilegescollectionService';
 export * from './services/RolesService';
-export * from './services/SimpleSecurityActionService';
 export * from './services/SystemuserprofilescollectionService';
 export * from './services/SystemuserrolescollectionService';
 export * from './services/SystemusersService';
