@@ -224,11 +224,17 @@ const getActionPrincipalLabel = (action: Ope_simplesecurityactions) => {
   )
 }
 
-const getActionRelatedLabel = (action: Ope_simplesecurityactions) => {
+const getActionRelatedLabel = (
+  action: Ope_simplesecurityactions,
+  profileNameById?: Record<string, string>
+) => {
   const record = action as unknown as Record<string, unknown>
+  const profileId = action.ope_relatedprofile ?? ''
+  const profileName = profileId && profileNameById ? profileNameById[profileId] : undefined
   return (
     getFormattedValue(record, '_ope_relatedrole_value') ||
     getFormattedValue(record, '_ope_relatedteam_value') ||
+    profileName ||
     action.ope_relatedprofile ||
     getFormattedValue(record, 'ope_relatedtype') ||
     'Unknown'
@@ -305,6 +311,13 @@ const extractEntitySchemaFromPrivilege = (name?: string) => {
 }
 
 function App() {
+  const [theme, setTheme] = useState<'earth' | 'night' | 'clean-slate'>(() => {
+    const stored = window.localStorage.getItem('simple-security-theme')
+    if (stored === 'earth' || stored === 'night' || stored === 'clean-slate') {
+      return stored
+    }
+    return 'earth'
+  })
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState<
     'users' | 'teams' | 'roles' | 'profiles' | 'actions'
@@ -362,6 +375,7 @@ function App() {
   const [actionsLoading, setActionsLoading] = useState(false)
   const [actionsHasMore, setActionsHasMore] = useState(true)
   const [actionsError, setActionsError] = useState<string | null>(null)
+  const [actionProfileNameById, setActionProfileNameById] = useState<Record<string, string>>({})
 
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
@@ -1095,7 +1109,7 @@ function App() {
         principalType,
         getActionPrincipalLabel(action),
         relatedType,
-        getActionRelatedLabel(action),
+        getActionRelatedLabel(action, actionProfileNameById),
         getActionStatusLabel(action),
         action.ope_errormessage ?? '',
       ]
@@ -1263,6 +1277,50 @@ function App() {
     actionRelatedFilter,
     actionSort,
   ])
+
+  useEffect(() => {
+    window.localStorage.setItem('simple-security-theme', theme)
+  }, [theme])
+
+  useEffect(() => {
+    const profileIds = uniqueById(
+      actions
+        .filter(
+          (action) =>
+            String(action.ope_relatedtype ?? '') ===
+            String(ACTION_RELATED_VALUES.columnsecurityprofile)
+        )
+        .map((action) => ({ id: action.ope_relatedprofile ?? '' }))
+        .filter((item) => item.id)
+    ).map((item) => item.id)
+
+    const missingIds = profileIds.filter((id) => !actionProfileNameById[id])
+    if (missingIds.length === 0) return
+
+    let isActive = true
+    const loadProfileNames = async () => {
+      try {
+        const profiles = await fetchProfilesByIds(missingIds)
+        if (!isActive) return
+        setActionProfileNameById((prev) => {
+          const next = { ...prev }
+          profiles.forEach((profile) => {
+            if (!profile.fieldsecurityprofileid) return
+            next[profile.fieldsecurityprofileid] = profile.name ?? 'Unnamed profile'
+          })
+          return next
+        })
+      } catch (error) {
+        console.error('[Actions] Profile name lookup failed', error)
+      }
+    }
+
+    void loadProfileNames()
+
+    return () => {
+      isActive = false
+    }
+  }, [actions, actionProfileNameById])
 
   useEffect(() => {
     if (!selectedUserId) {
@@ -1943,13 +2001,13 @@ function App() {
     actions: {
       columns: [
         { key: 'createdon', label: 'Created' },
-        { key: 'operation', label: 'Operation' },
         { key: 'principal', label: 'Principal' },
+        { key: 'operation', label: 'Operation' },
         { key: 'related', label: 'Related' },
         { key: 'owner', label: 'Owner' },
         { key: 'status', label: 'Status' },
       ],
-      template: '1fr 0.9fr 1.2fr 1.2fr 1fr 0.8fr 140px',
+      template: '1fr 1.2fr 0.9fr 1.2fr 1fr 0.8fr 140px',
     },
   } as const
 
@@ -2005,7 +2063,7 @@ function App() {
     manageActionNoticeType === 'success' ? 'notice success' : 'notice'
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell theme-${theme}`}>
       <aside className={`side-nav ${navCollapsed ? 'is-collapsed' : ''}`}>
         <div className="side-nav-header">
           <button
@@ -2109,6 +2167,20 @@ function App() {
               <span className="tab-meta">Review requests and completion status.</span>
             </span>
           </button>
+        </div>
+        <div className={`theme-switcher ${navCollapsed ? 'is-collapsed' : ''}`}>
+          <p className="theme-label">Theme</p>
+          <select
+            className="filter-select theme-select"
+            value={theme}
+            onChange={(event) =>
+              setTheme(event.target.value as 'earth' | 'night' | 'clean-slate')
+            }
+          >
+            <option value="earth">Sienna Clay</option>
+            <option value="night">Night Watch</option>
+            <option value="clean-slate">Clean Slate</option>
+          </select>
         </div>
       </aside>
 
@@ -2439,7 +2511,6 @@ function App() {
                       key={action.ope_simplesecurityactionid}
                     >
                       <span className="grid-cell">{formatDateTime(action.createdon)}</span>
-                      <span className="grid-cell">{getActionOperationLabel(action)}</span>
                       <span className="grid-cell">
                         {formatActionEntityLabel(
                           action,
@@ -2447,11 +2518,12 @@ function App() {
                           getActionPrincipalLabel(action)
                         )}
                       </span>
+                      <span className="grid-cell">{getActionOperationLabel(action)}</span>
                       <span className="grid-cell">
                         {formatActionEntityLabel(
                           action,
                           'ope_relatedtype',
-                          getActionRelatedLabel(action)
+                          getActionRelatedLabel(action, actionProfileNameById)
                         )}
                       </span>
                       <span className="grid-cell">
@@ -3034,7 +3106,7 @@ function App() {
                       {formatActionEntityLabel(
                         selectedAction,
                         'ope_relatedtype',
-                        getActionRelatedLabel(selectedAction)
+                        getActionRelatedLabel(selectedAction, actionProfileNameById)
                       )}
                     </span>
                   </div>
