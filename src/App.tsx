@@ -3,6 +3,7 @@ import './App.css'
 import {
   FieldpermissionsService,
   FieldsecurityprofilesService,
+  Ope_simplesecurityactionsService,
   PrivilegesService,
   RolesService,
   RoleprivilegescollectionService,
@@ -16,6 +17,7 @@ import {
 } from './generated'
 import type { Fieldpermissions } from './generated/models/FieldpermissionsModel'
 import type { Fieldsecurityprofiles } from './generated/models/FieldsecurityprofilesModel'
+import type { Ope_simplesecurityactions } from './generated/models/Ope_simplesecurityactionsModel'
 import type { Privileges } from './generated/models/PrivilegesModel'
 import type { Roleprivilegescollection } from './generated/models/RoleprivilegescollectionModel'
 import type { Roles } from './generated/models/RolesModel'
@@ -32,6 +34,35 @@ const PAGE_SIZE = 25
 const USER_PAGE_SIZE = 500
 const ROLE_PAGE_SIZE = 200
 const RELATIONSHIP_PAGE_SIZE = 200
+const ACTION_PAGE_SIZE = 50
+
+const ACTION_OPERATION_VALUES = {
+  associate: 884680000,
+  disassociate: 884680001,
+} as const
+
+const ACTION_PRINCIPAL_VALUES = {
+  systemuser: 884680000,
+  team: 884680001,
+} as const
+
+const ACTION_RELATED_VALUES = {
+  role: 884680000,
+  team: 884680001,
+  columnsecurityprofile: 884680002,
+} as const
+
+const ACTION_STATUS_VALUES = {
+  pending: 1,
+  success: 884680001,
+  failed: 884680002,
+} as const
+
+const RELATED_TYPE_LABELS = {
+  role: 'role',
+  team: 'team',
+  columnsecurityprofile: 'profile',
+} as const
 
 type LabeledRole = {
   id: string
@@ -158,6 +189,76 @@ const getFormattedValue = (record: Record<string, unknown>, field: string) => {
   return typeof value === 'string' ? value : undefined
 }
 
+const formatDateTime = (value?: string) => {
+  if (!value) return 'Not available'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString()
+}
+
+const getActionOperationLabel = (action: Ope_simplesecurityactions) => {
+  const record = action as unknown as Record<string, unknown>
+  return (
+    getFormattedValue(record, 'ope_operation') ||
+    action.ope_operationname ||
+    (action.ope_operation ? String(action.ope_operation) : 'Unknown')
+  )
+}
+
+const getActionStatusLabel = (action: Ope_simplesecurityactions) => {
+  const record = action as unknown as Record<string, unknown>
+  return (
+    getFormattedValue(record, 'statuscode') ||
+    action.statuscodename ||
+    (action.statuscode ? String(action.statuscode) : 'Unknown')
+  )
+}
+
+const getActionPrincipalLabel = (action: Ope_simplesecurityactions) => {
+  const record = action as unknown as Record<string, unknown>
+  return (
+    getFormattedValue(record, '_ope_principaluser_value') ||
+    getFormattedValue(record, '_ope_principalteam_value') ||
+    getFormattedValue(record, 'ope_principletype') ||
+    'Unknown'
+  )
+}
+
+const getActionRelatedLabel = (action: Ope_simplesecurityactions) => {
+  const record = action as unknown as Record<string, unknown>
+  return (
+    getFormattedValue(record, '_ope_relatedrole_value') ||
+    getFormattedValue(record, '_ope_relatedteam_value') ||
+    action.ope_relatedprofile ||
+    getFormattedValue(record, 'ope_relatedtype') ||
+    'Unknown'
+  )
+}
+
+const normalizeActionTypeLabel = (value?: string) => {
+  const normalized = (value ?? '').trim().toLowerCase()
+  if (!normalized) return undefined
+  if (['systemuser', 'system user', 'user'].includes(normalized)) return 'User'
+  if (['team'].includes(normalized)) return 'Team'
+  if (['role', 'security role'].includes(normalized)) return 'Security Role'
+  if (['columnsecurityprofile', 'column security profile', 'field security profile'].includes(normalized)) {
+    return 'Field Security Profile'
+  }
+  return value
+}
+
+const formatActionEntityLabel = (
+  action: Ope_simplesecurityactions,
+  typeField: 'ope_principletype' | 'ope_relatedtype',
+  name: string
+) => {
+  const record = action as unknown as Record<string, unknown>
+  const rawType = getFormattedValue(record, typeField)
+  const typeLabel = normalizeActionTypeLabel(rawType)
+  if (!typeLabel) return name
+  return `${name} (${typeLabel})`
+}
+
 const escapeODataValue = (value: string) => value.replace(/'/g, "''")
 
 const buildOrFilter = (field: string, ids: string[]) =>
@@ -205,7 +306,9 @@ const extractEntitySchemaFromPrivilege = (name?: string) => {
 
 function App() {
   const [navCollapsed, setNavCollapsed] = useState(false)
-  const [activeTab, setActiveTab] = useState<'users' | 'teams' | 'roles' | 'profiles'>('users')
+  const [activeTab, setActiveTab] = useState<
+    'users' | 'teams' | 'roles' | 'profiles' | 'actions'
+  >('users')
   const [userSearch, setUserSearch] = useState('')
   const [hideSystemUsers, setHideSystemUsers] = useState(true)
   const [userStatusFilter, setUserStatusFilter] = useState<'enabled' | 'disabled' | 'all'>(
@@ -215,6 +318,20 @@ function App() {
   const [teamTypeFilter, setTeamTypeFilter] = useState<'all' | '0' | '1' | '2' | '3'>('all')
   const [roleSearch, setRoleSearch] = useState('')
   const [profileSearch, setProfileSearch] = useState('')
+  const [actionSearch, setActionSearch] = useState('')
+  const [actionOperationFilter, setActionOperationFilter] = useState<
+    'all' | 'associate' | 'disassociate'
+  >('all')
+  const [actionStatusFilter, setActionStatusFilter] = useState<
+    'all' | 'pending' | 'success' | 'failed'
+  >('all')
+  const [actionPrincipalFilter, setActionPrincipalFilter] = useState<
+    'all' | 'systemuser' | 'team'
+  >('all')
+  const [actionRelatedFilter, setActionRelatedFilter] = useState<
+    'all' | 'role' | 'team' | 'columnsecurityprofile'
+  >('all')
+  const [actionSort, setActionSort] = useState<'newest' | 'oldest'>('newest')
 
   const [users, setUsers] = useState<Systemusers[]>([])
   const [usersSkipToken, setUsersSkipToken] = useState<string | null>(null)
@@ -240,10 +357,17 @@ function App() {
   const [profilesHasMore, setProfilesHasMore] = useState(true)
   const [profilesError, setProfilesError] = useState<string | null>(null)
 
+  const [actions, setActions] = useState<Ope_simplesecurityactions[]>([])
+  const [actionsSkipToken, setActionsSkipToken] = useState<string | null>(null)
+  const [actionsLoading, setActionsLoading] = useState(false)
+  const [actionsHasMore, setActionsHasMore] = useState(true)
+  const [actionsError, setActionsError] = useState<string | null>(null)
+
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null)
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null)
 
   const [userDetail, setUserDetail] = useState<UserDetail | null>(null)
   const [userDetailLoading, setUserDetailLoading] = useState(false)
@@ -284,6 +408,7 @@ function App() {
   const [manageActionBusy, setManageActionBusy] = useState(false)
   const [manageActionError, setManageActionError] = useState<string | null>(null)
   const [manageActionNotice, setManageActionNotice] = useState<string | null>(null)
+  const [manageActionNoticeType, setManageActionNoticeType] = useState<'success' | null>(null)
   const [manageUserResults, setManageUserResults] = useState<Systemusers[]>([])
   const [manageUserResultsLoading, setManageUserResultsLoading] = useState(false)
   const [manageUserResultsError, setManageUserResultsError] = useState<string | null>(null)
@@ -303,6 +428,10 @@ function App() {
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.fieldsecurityprofileid === selectedProfileId) ?? null,
     [profiles, selectedProfileId]
+  )
+  const selectedAction = useMemo(
+    () => actions.find((action) => action.ope_simplesecurityactionid === selectedActionId) ?? null,
+    [actions, selectedActionId]
   )
 
   const getBusinessUnitName = (user: Systemusers) => {
@@ -469,10 +598,42 @@ function App() {
     return clauses.length ? clauses.join(' and ') : undefined
   }
 
+  const applyActionFilters = () => {
+    const clauses: string[] = []
+
+    if (actionOperationFilter !== 'all') {
+      clauses.push(`ope_operation eq ${ACTION_OPERATION_VALUES[actionOperationFilter]}`)
+    }
+    if (actionPrincipalFilter !== 'all') {
+      clauses.push(`ope_principletype eq ${ACTION_PRINCIPAL_VALUES[actionPrincipalFilter]}`)
+    }
+    if (actionRelatedFilter !== 'all') {
+      clauses.push(`ope_relatedtype eq ${ACTION_RELATED_VALUES[actionRelatedFilter]}`)
+    }
+    if (actionStatusFilter !== 'all') {
+      clauses.push(`statuscode eq ${ACTION_STATUS_VALUES[actionStatusFilter]}`)
+    }
+
+    const searchTerm = actionSearch.trim()
+    if (searchTerm) {
+      const term = escapeODataValue(searchTerm)
+      clauses.push(
+        `(${[
+          `contains(ope_relatedprofile, '${term}')`,
+          `contains(ope_errormessage, '${term}')`,
+          `contains(ope_name, '${term}')`,
+        ].join(' or ')})`
+      )
+    }
+
+    return clauses.length ? clauses.join(' and ') : undefined
+  }
+
   const openManageModal = (type: ManageModalType, id: string) => {
     setManageModal({ type, id })
     setManageActionError(null)
     setManageActionNotice(null)
+    setManageActionNoticeType(null)
     setManageSearch({ users: '', teams: '', roles: '', profiles: '' })
     setManageUserResults([])
     setManageUserResultsError(null)
@@ -482,6 +643,7 @@ function App() {
     setManageModal(null)
     setManageActionError(null)
     setManageActionNotice(null)
+    setManageActionNoticeType(null)
     setManageUserResults([])
     setManageUserResultsError(null)
   }
@@ -572,6 +734,7 @@ function App() {
   }) => {
     setManageActionError(null)
     setManageActionNotice(null)
+    setManageActionNoticeType(null)
 
     if (input.operation === 'disassociate' && input.relatedType === 'role') {
       if (isSystemAdministratorRole(input.relatedName)) {
@@ -591,6 +754,14 @@ function App() {
       }
     }
 
+    const relatedLabel = input.relatedName?.trim()
+      ? input.relatedName.trim()
+      : RELATED_TYPE_LABELS[input.relatedType] ?? input.relatedType
+    const successMessage =
+      input.operation === 'associate'
+        ? `Added to ${relatedLabel}.`
+        : `Removed from ${relatedLabel}.`
+
     setManageActionBusy(true)
     try {
       const result = await runSimpleSecurityAction({
@@ -601,9 +772,11 @@ function App() {
         relatedId: input.relatedId,
       })
       if (result.pending) {
+        setManageActionNoticeType(null)
         setManageActionNotice(result.message ?? 'Request submitted. Updates may take a moment.')
       } else {
-        setManageActionNotice('Associations updated successfully.')
+        setManageActionNoticeType('success')
+        setManageActionNotice(successMessage)
       }
       refreshActiveDetail(manageModal?.type)
     } catch (error) {
@@ -672,12 +845,13 @@ function App() {
     })
   }, [profiles, profileSearch])
 
-  const handleTabChange = (tab: 'users' | 'teams' | 'roles' | 'profiles') => {
+  const handleTabChange = (tab: 'users' | 'teams' | 'roles' | 'profiles' | 'actions') => {
     setActiveTab(tab)
     setSelectedUserId(null)
     setSelectedTeamId(null)
     setSelectedRoleId(null)
     setSelectedProfileId(null)
+    setSelectedActionId(null)
     setUserDetail(null)
     setTeamDetail(null)
     setRoleDetail(null)
@@ -858,6 +1032,101 @@ function App() {
     }
   }
 
+  const loadActionsPage = async (mode: 'reset' | 'more' = 'reset') => {
+    setActionsLoading(true)
+    setActionsError(null)
+    try {
+      const skipToken = mode === 'more' ? actionsSkipToken ?? undefined : undefined
+      const filter = applyActionFilters()
+      const orderBy = [actionSort === 'oldest' ? 'createdon' : 'createdon desc']
+
+      const result = await Ope_simplesecurityactionsService.getAll({
+        select: [
+          'ope_simplesecurityactionid',
+          'ope_operation',
+          'ope_principletype',
+          'ope_relatedtype',
+          'ope_relatedprofile',
+          'ope_errormessage',
+          'createdon',
+          'statuscode',
+          'ope_name',
+          '_ope_principaluser_value',
+          '_ope_principalteam_value',
+          '_ope_relatedrole_value',
+          '_ope_relatedteam_value',
+          '_ownerid_value',
+        ],
+        filter,
+        orderBy,
+        top: ACTION_PAGE_SIZE,
+        skipToken,
+      })
+
+      if (!result.success) {
+        throw new Error(`Unable to load security actions. ${describeError(result.error)}`)
+      }
+
+      setActions((prev) => (mode === 'reset' ? result.data : [...prev, ...result.data]))
+      setActionsSkipToken(result.skipToken ?? null)
+      setActionsHasMore(Boolean(result.skipToken))
+    } catch (error) {
+      console.error('[Actions] Load failed', error)
+      setActionsError(describeError(error))
+    } finally {
+      setActionsLoading(false)
+    }
+  }
+
+  const exportActionsCsv = () => {
+    if (actions.length === 0) return
+
+    const toCsvValue = (value: string) => `"${value.replace(/"/g, '""')}"`
+
+    const rows = actions.map((action) => {
+      const record = action as unknown as Record<string, unknown>
+      const principalType =
+        getFormattedValue(record, 'ope_principletype') || 'Unknown'
+      const relatedType =
+        getFormattedValue(record, 'ope_relatedtype') || 'Unknown'
+      return [
+        formatDateTime(action.createdon),
+        getActionOperationLabel(action),
+        principalType,
+        getActionPrincipalLabel(action),
+        relatedType,
+        getActionRelatedLabel(action),
+        getActionStatusLabel(action),
+        action.ope_errormessage ?? '',
+      ]
+    })
+
+    const header = [
+      'Created On',
+      'Operation',
+      'Principal Type',
+      'Principal',
+      'Related Type',
+      'Related',
+      'Status',
+      'Error',
+    ]
+
+    const csv = [header, ...rows]
+      .map((row) => row.map((value) => toCsvValue(String(value))).join(','))
+      .join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `security-actions-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const fetchRolesByIds = async (ids: string[]) => {
     if (ids.length === 0) return [] as Roles[]
     const filter = buildOrFilter('roleid', ids)
@@ -980,6 +1249,20 @@ function App() {
       void loadProfilesPage('reset')
     }
   }, [profileSearch])
+
+  useEffect(() => {
+    if (activeTab === 'actions') {
+      void loadActionsPage('reset')
+    }
+  }, [
+    activeTab,
+    actionSearch,
+    actionOperationFilter,
+    actionStatusFilter,
+    actionPrincipalFilter,
+    actionRelatedFilter,
+    actionSort,
+  ])
 
   useEffect(() => {
     if (!selectedUserId) {
@@ -1600,13 +1883,15 @@ function App() {
     (activeTab === 'users' && Boolean(selectedUserId)) ||
     (activeTab === 'teams' && Boolean(selectedTeamId)) ||
     (activeTab === 'roles' && Boolean(selectedRoleId)) ||
-    (activeTab === 'profiles' && Boolean(selectedProfileId))
+    (activeTab === 'profiles' && Boolean(selectedProfileId)) ||
+    (activeTab === 'actions' && Boolean(selectedActionId))
 
   const tabDescriptions: Record<typeof activeTab, string> = {
     users: 'Pick a user to see direct roles and inherited roles via team membership.',
     teams: 'Browse teams and drill into administrators and team types.',
     roles: 'Review assignments for users and teams, including inherited memberships.',
     profiles: 'Inspect field permissions and profile memberships.',
+    actions: 'Track association requests, status, and error details.',
   }
 
   const tabTitles: Record<typeof activeTab, string> = {
@@ -1614,6 +1899,7 @@ function App() {
     teams: 'Teams',
     roles: 'Security Roles',
     profiles: 'Field Security Profiles',
+    actions: 'Security Actions',
   }
 
   const gridConfig = {
@@ -1654,6 +1940,17 @@ function App() {
       ],
       template: '1.4fr 1fr 1.4fr 140px',
     },
+    actions: {
+      columns: [
+        { key: 'createdon', label: 'Created' },
+        { key: 'operation', label: 'Operation' },
+        { key: 'principal', label: 'Principal' },
+        { key: 'related', label: 'Related' },
+        { key: 'owner', label: 'Owner' },
+        { key: 'status', label: 'Status' },
+      ],
+      template: '1fr 0.9fr 1.2fr 1.2fr 1fr 0.8fr 140px',
+    },
   } as const
 
   const gridTemplate = gridConfig[activeTab].template
@@ -1663,41 +1960,49 @@ function App() {
     return values.some((value) => (value ?? '').toLowerCase().includes(term))
   }
 
-  const userManageRoles = userDetail?.roles.filter((role) => role.source === 'direct') ?? []
+  const userManageRoles = userDetail?.roles ?? []
   const userManageTeams = userDetail?.teams ?? []
-  const userManageProfiles =
-    userDetail?.fieldSecurityProfiles.filter((profile) => profile.source === 'direct') ?? []
+  const userManageProfiles = userDetail?.fieldSecurityProfiles ?? []
 
   const teamManageMembers = teamDetail?.members ?? []
   const teamManageRoles = teamDetail?.roles ?? []
   const teamManageProfiles = teamDetail?.fieldSecurityProfiles ?? []
 
   const roleManageTeams = roleDetail?.teams ?? []
-  const roleManageUsers = roleDetail?.users.filter((user) => user.source === 'direct') ?? []
+  const roleManageUsers = roleDetail?.users ?? []
 
   const profileManageTeams = profileMemberships?.teams ?? []
-  const profileManageUsers =
-    profileMemberships?.users.filter((user) => user.source === 'direct') ?? []
+  const profileManageUsers = profileMemberships?.users ?? []
 
-  const userRoleIds = new Set(userManageRoles.map((role) => role.id))
+  const userRoleIds = new Set(
+    userManageRoles.filter((role) => role.source === 'direct').map((role) => role.id)
+  )
   const userTeamIds = new Set(userManageTeams.map((team) => team.id))
-  const userProfileIds = new Set(userManageProfiles.map((profile) => profile.id))
+  const userProfileIds = new Set(
+    userManageProfiles.filter((profile) => profile.source === 'direct').map((profile) => profile.id)
+  )
 
   const teamMemberIds = new Set(teamManageMembers.map((member) => member.id))
   const teamRoleIds = new Set(teamManageRoles.map((role) => role.id))
   const teamProfileIds = new Set(teamManageProfiles.map((profile) => profile.id))
 
   const roleTeamIds = new Set(roleManageTeams.map((team) => team.id))
-  const roleUserIds = new Set(roleManageUsers.map((user) => user.id))
+  const roleUserIds = new Set(
+    roleManageUsers.filter((user) => user.source === 'direct').map((user) => user.id)
+  )
 
   const profileTeamIds = new Set(profileManageTeams.map((team) => team.id))
-  const profileUserIds = new Set(profileManageUsers.map((user) => user.id))
+  const profileUserIds = new Set(
+    profileManageUsers.filter((user) => user.source === 'direct').map((user) => user.id)
+  )
 
   const manageUserCandidates = manageUserResults.length ? manageUserResults : users
   const manageUserSearchTerm = normalizeSearchValue(manageSearch.users)
   const manageTeamSearchTerm = normalizeSearchValue(manageSearch.teams)
   const manageRoleSearchTerm = normalizeSearchValue(manageSearch.roles)
   const manageProfileSearchTerm = normalizeSearchValue(manageSearch.profiles)
+  const manageNoticeClassName =
+    manageActionNoticeType === 'success' ? 'notice success' : 'notice'
 
   return (
     <div className="app-shell">
@@ -1788,6 +2093,22 @@ function App() {
               <span className="tab-meta">Review memberships and field permissions.</span>
             </span>
           </button>
+          <button
+            className={`tab-button ${activeTab === 'actions' ? 'is-active' : ''}`}
+            onClick={() => handleTabChange('actions')}
+            title="Security Actions"
+          >
+            <span className="tab-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" role="presentation">
+                <path d="M12 3v6l4 2" />
+                <circle cx="12" cy="12" r="9" />
+              </svg>
+            </span>
+            <span className="tab-text">
+              <span className="tab-title">Security Actions</span>
+              <span className="tab-meta">Review requests and completion status.</span>
+            </span>
+          </button>
         </div>
       </aside>
 
@@ -1859,6 +2180,94 @@ function App() {
                   />
                 </div>
               )}
+              {activeTab === 'actions' && (
+                <div className="panel-header-controls">
+                  <input
+                    className="filter-input"
+                    type="search"
+                    placeholder="Search actions"
+                    value={actionSearch}
+                    onChange={(event) => setActionSearch(event.target.value)}
+                  />
+                  <label className="toggle">
+                    <span>Operation</span>
+                    <select
+                      className="filter-select"
+                      value={actionOperationFilter}
+                      onChange={(event) =>
+                        setActionOperationFilter(
+                          event.target.value as 'all' | 'associate' | 'disassociate'
+                        )
+                      }
+                    >
+                      <option value="all">All</option>
+                      <option value="associate">Associate</option>
+                      <option value="disassociate">Disassociate</option>
+                    </select>
+                  </label>
+                  <label className="toggle">
+                    <span>Status</span>
+                    <select
+                      className="filter-select"
+                      value={actionStatusFilter}
+                      onChange={(event) =>
+                        setActionStatusFilter(
+                          event.target.value as 'all' | 'pending' | 'success' | 'failed'
+                        )
+                      }
+                    >
+                      <option value="all">All</option>
+                      <option value="pending">Pending</option>
+                      <option value="success">Success</option>
+                      <option value="failed">Failed</option>
+                    </select>
+                  </label>
+                  <label className="toggle">
+                    <span>Principal</span>
+                    <select
+                      className="filter-select"
+                      value={actionPrincipalFilter}
+                      onChange={(event) =>
+                        setActionPrincipalFilter(event.target.value as 'all' | 'systemuser' | 'team')
+                      }
+                    >
+                      <option value="all">All</option>
+                      <option value="systemuser">User</option>
+                      <option value="team">Team</option>
+                    </select>
+                  </label>
+                  <label className="toggle">
+                    <span>Related</span>
+                    <select
+                      className="filter-select"
+                      value={actionRelatedFilter}
+                      onChange={(event) =>
+                        setActionRelatedFilter(
+                          event.target.value as 'all' | 'role' | 'team' | 'columnsecurityprofile'
+                        )
+                      }
+                    >
+                      <option value="all">All</option>
+                      <option value="role">Role</option>
+                      <option value="team">Team</option>
+                      <option value="columnsecurityprofile">Profile</option>
+                    </select>
+                  </label>
+                  <label className="toggle">
+                    <span>Sort</span>
+                    <select
+                      className="filter-select"
+                      value={actionSort}
+                      onChange={(event) =>
+                        setActionSort(event.target.value as 'newest' | 'oldest')
+                      }
+                    >
+                      <option value="newest">Newest</option>
+                      <option value="oldest">Oldest</option>
+                    </select>
+                  </label>
+                </div>
+              )}
               <div className="panel-header-actions">
                 <label className="toggle">
                   <span>User Status</span>
@@ -1901,6 +2310,16 @@ function App() {
                   <button className="ghost-button" onClick={() => loadProfilesPage('reset')} disabled={profilesLoading}>
                     Refresh
                   </button>
+                )}
+                {activeTab === 'actions' && (
+                  <>
+                    <button className="ghost-button" onClick={() => loadActionsPage('reset')} disabled={actionsLoading}>
+                      Refresh
+                    </button>
+                    <button className="ghost-button" onClick={exportActionsCsv} disabled={actions.length === 0}>
+                      Export CSV
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -2004,6 +2423,56 @@ function App() {
                   ))}
                 </>
               )}
+              {activeTab === 'actions' && (
+                <>
+                  {actionsError && <div className="notice error">{actionsError}</div>}
+                  {actionsLoading && actions.length === 0 && (
+                    <div className="notice">Loading actions...</div>
+                  )}
+                  {!actionsLoading && actions.length === 0 && (
+                    <div className="notice">No actions found.</div>
+                  )}
+                  {actions.map((action) => (
+                    <div
+                      className="grid-row"
+                      style={{ gridTemplateColumns: gridTemplate }}
+                      key={action.ope_simplesecurityactionid}
+                    >
+                      <span className="grid-cell">{formatDateTime(action.createdon)}</span>
+                      <span className="grid-cell">{getActionOperationLabel(action)}</span>
+                      <span className="grid-cell">
+                        {formatActionEntityLabel(
+                          action,
+                          'ope_principletype',
+                          getActionPrincipalLabel(action)
+                        )}
+                      </span>
+                      <span className="grid-cell">
+                        {formatActionEntityLabel(
+                          action,
+                          'ope_relatedtype',
+                          getActionRelatedLabel(action)
+                        )}
+                      </span>
+                      <span className="grid-cell">
+                        {getFormattedValue(
+                          action as unknown as Record<string, unknown>,
+                          '_ownerid_value'
+                        ) ?? 'Unknown'}
+                      </span>
+                      <span className="grid-cell">{getActionStatusLabel(action)}</span>
+                      <span className="grid-cell action">
+                        <button
+                          className="ghost-button small"
+                          onClick={() => setSelectedActionId(action.ope_simplesecurityactionid)}
+                        >
+                          View Details
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </div>
           <div className="list-actions">
@@ -2041,6 +2510,15 @@ function App() {
                 disabled={!profilesHasMore || profilesLoading}
               >
                 {profilesHasMore ? 'Load more' : 'No more profiles'}
+              </button>
+            )}
+            {activeTab === 'actions' && (
+              <button
+                className="ghost-button"
+                onClick={() => loadActionsPage('more')}
+                disabled={!actionsHasMore || actionsLoading}
+              >
+                {actionsHasMore ? 'Load more' : 'No more actions'}
               </button>
             )}
           </div>
@@ -2482,6 +2960,108 @@ function App() {
               </div>
             </div>
           )}
+
+          {activeTab === 'actions' && !selectedAction && (
+            <div className="detail-panel-inner">
+              <div className="notice">Select an action to view details.</div>
+            </div>
+          )}
+          {activeTab === 'actions' && selectedAction && (
+            <div className="detail-panel-inner">
+              <div className="detail">
+                <div className="detail-header">
+                  <div className="detail-header-top">
+                    <h3>Security Action</h3>
+                    <div className="detail-header-actions">
+                      <button
+                        className="detail-close"
+                        type="button"
+                        onClick={() => setSelectedActionId(null)}
+                        aria-label="Close action details"
+                      >
+                        <svg viewBox="0 0 24 24" role="presentation" aria-hidden>
+                          <path d="M6 6l12 12" />
+                          <path d="M18 6l-12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="detail-stack">
+                  <div className="detail-line">
+                    <span className="detail-label">Created</span>
+                    <span>{formatDateTime(selectedAction.createdon)}</span>
+                  </div>
+                  <div className="detail-line">
+                    <span className="detail-label">Operation</span>
+                    <span>{getActionOperationLabel(selectedAction)}</span>
+                  </div>
+                  <div className="detail-line">
+                    <span className="detail-label">Status</span>
+                    <span>{getActionStatusLabel(selectedAction)}</span>
+                  </div>
+                  <div className="detail-line">
+                    <span className="detail-label">Principal Type</span>
+                    <span>
+                      {getFormattedValue(
+                        selectedAction as unknown as Record<string, unknown>,
+                        'ope_principletype'
+                      ) || 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="detail-line">
+                    <span className="detail-label">Principal</span>
+                    <span>
+                      {formatActionEntityLabel(
+                        selectedAction,
+                        'ope_principletype',
+                        getActionPrincipalLabel(selectedAction)
+                      )}
+                    </span>
+                  </div>
+                  <div className="detail-line">
+                    <span className="detail-label">Related Type</span>
+                    <span>
+                      {getFormattedValue(
+                        selectedAction as unknown as Record<string, unknown>,
+                        'ope_relatedtype'
+                      ) || 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="detail-line">
+                    <span className="detail-label">Related</span>
+                    <span>
+                      {formatActionEntityLabel(
+                        selectedAction,
+                        'ope_relatedtype',
+                        getActionRelatedLabel(selectedAction)
+                      )}
+                    </span>
+                  </div>
+                  <div className="detail-line">
+                    <span className="detail-label">Owner</span>
+                    <span>
+                      {getFormattedValue(
+                        selectedAction as unknown as Record<string, unknown>,
+                        '_ownerid_value'
+                      ) ?? 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="detail-line">
+                    <span className="detail-label">Error Message</span>
+                    <span>{selectedAction.ope_errormessage ?? 'None'}</span>
+                  </div>
+                  <div className="detail-line">
+                    <span className="detail-label">Request Id</span>
+                    <span className="mono">{selectedAction.ope_simplesecurityactionid}</span>
+                  </div>
+                </div>
+                {selectedAction.ope_errormessage && (
+                  <div className="notice error">{selectedAction.ope_errormessage}</div>
+                )}
+              </div>
+            </div>
+          )}
         </aside>
 
         {manageModal && (
@@ -2526,7 +3106,9 @@ function App() {
                     </div>
                   </div>
                   {manageActionError && <div className="notice error">{manageActionError}</div>}
-                  {manageActionNotice && <div className="notice">{manageActionNotice}</div>}
+                  {manageActionNotice && (
+                    <div className={manageNoticeClassName}>{manageActionNotice}</div>
+                  )}
                   <div className="manage-sections">
                     <section className="manage-section">
                       <div className="manage-section-header">
@@ -2540,6 +3122,15 @@ function App() {
                             <li key={role.id} className="manage-row">
                               <div>
                                 <span>{role.name}</span>
+                                <span
+                                  className={`badge ${
+                                    role.source === 'direct' ? 'badge-direct' : 'badge-team'
+                                  }`}
+                                >
+                                  {role.source === 'direct'
+                                    ? 'Direct'
+                                    : `Via ${role.teamName ?? 'Team'}`}
+                                </span>
                                 {isSystemAdministratorRole(role.name) && (
                                   <span className="manage-meta">Protected</span>
                                 )}
@@ -2547,7 +3138,11 @@ function App() {
                               <button
                                 className="ghost-button small danger"
                                 type="button"
-                                disabled={manageActionBusy || isSystemAdministratorRole(role.name)}
+                                disabled={
+                                  manageActionBusy ||
+                                  role.source !== 'direct' ||
+                                  isSystemAdministratorRole(role.name)
+                                }
                                 onClick={() =>
                                   handleManageAction({
                                     operation: 'disassociate',
@@ -2720,12 +3315,21 @@ function App() {
                             <li key={profile.id} className="manage-row">
                               <div>
                                 <span>{profile.name}</span>
+                                <span
+                                  className={`badge ${
+                                    profile.source === 'direct' ? 'badge-direct' : 'badge-team'
+                                  }`}
+                                >
+                                  {profile.source === 'direct'
+                                    ? 'Direct'
+                                    : `Via ${profile.teamName ?? 'Team'}`}
+                                </span>
                                 <span className="manage-meta">{profile.description ?? 'No description'}</span>
                               </div>
                               <button
                                 className="ghost-button small danger"
                                 type="button"
-                                disabled={manageActionBusy}
+                                disabled={manageActionBusy || profile.source !== 'direct'}
                                 onClick={() =>
                                   handleManageAction({
                                     operation: 'disassociate',
@@ -2830,7 +3434,9 @@ function App() {
                     </div>
                   </div>
                   {manageActionError && <div className="notice error">{manageActionError}</div>}
-                  {manageActionNotice && <div className="notice">{manageActionNotice}</div>}
+                  {manageActionNotice && (
+                    <div className={manageNoticeClassName}>{manageActionNotice}</div>
+                  )}
                   <div className="manage-sections">
                     <section className="manage-section">
                       <div className="manage-section-header">
@@ -3139,7 +3745,9 @@ function App() {
                     </div>
                   </div>
                   {manageActionError && <div className="notice error">{manageActionError}</div>}
-                  {manageActionNotice && <div className="notice">{manageActionNotice}</div>}
+                  {manageActionNotice && (
+                    <div className={manageNoticeClassName}>{manageActionNotice}</div>
+                  )}
                   <div className="manage-sections">
                     <section className="manage-section">
                       <div className="manage-section-header">
@@ -3153,12 +3761,25 @@ function App() {
                             <li key={user.id} className="manage-row">
                               <div>
                                 <span>{user.name}</span>
+                                <span
+                                  className={`badge ${
+                                    user.source === 'direct' ? 'badge-direct' : 'badge-team'
+                                  }`}
+                                >
+                                  {user.source === 'direct'
+                                    ? 'Direct'
+                                    : `Via ${user.teamName ?? 'Team'}`}
+                                </span>
                                 <span className="manage-meta">{user.email ?? 'No email'}</span>
                               </div>
                               <button
                                 className="ghost-button small danger"
                                 type="button"
-                                disabled={manageActionBusy || isSystemAdministratorRole(selectedRole.name)}
+                                disabled={
+                                  manageActionBusy ||
+                                  user.source !== 'direct' ||
+                                  isSystemAdministratorRole(selectedRole.name)
+                                }
                                 onClick={() =>
                                   handleManageAction({
                                     operation: 'disassociate',
@@ -3361,7 +3982,9 @@ function App() {
                     </div>
                   </div>
                   {manageActionError && <div className="notice error">{manageActionError}</div>}
-                  {manageActionNotice && <div className="notice">{manageActionNotice}</div>}
+                  {manageActionNotice && (
+                    <div className={manageNoticeClassName}>{manageActionNotice}</div>
+                  )}
                   <div className="manage-sections">
                     <section className="manage-section">
                       <div className="manage-section-header">
@@ -3375,12 +3998,21 @@ function App() {
                             <li key={user.id} className="manage-row">
                               <div>
                                 <span>{user.name}</span>
+                                <span
+                                  className={`badge ${
+                                    user.source === 'direct' ? 'badge-direct' : 'badge-team'
+                                  }`}
+                                >
+                                  {user.source === 'direct'
+                                    ? 'Direct'
+                                    : `Via ${user.teamName ?? 'Team'}`}
+                                </span>
                                 <span className="manage-meta">{user.email ?? 'No email'}</span>
                               </div>
                               <button
                                 className="ghost-button small danger"
                                 type="button"
-                                disabled={manageActionBusy}
+                                disabled={manageActionBusy || user.source !== 'direct'}
                                 onClick={() =>
                                   handleManageAction({
                                     operation: 'disassociate',

@@ -760,6 +760,12 @@
   border: 1px solid rgba(156, 46, 28, 0.2);
 }
 
+.notice.success {
+  background: #e6f4ea;
+  color: #2f6b43;
+  border: 1px solid rgba(47, 107, 67, 0.2);
+}
+
 .muted {
   color: #7a5e4b;
   font-size: 0.88rem;
