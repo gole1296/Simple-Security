@@ -8,34 +8,41 @@ Project context
 
 Summary of important changes
 - Added Manage modal overlays for Users, Teams, Roles, and Column Security Profiles with add/remove actions.
-- Added custom API caller via custom connector for ope_simplesecurityaction and wired manage actions to it.
 - Enforced business unit matching for user/team role and team membership associations.
 - Prevent removal of System Administrator role with message: "This application does not allow for removing System Administrator permissions. Please perform this action in the Power Platform Admin Center".
-- Manage modal includes search and add lists for roles, teams, users, and column security profiles.
-- Added connector data source entry in .power/schemas/appschemas/dataSourcesInfo.ts (auto-generated).
+- Switched manage actions to create records in custom table ope_simplesecurityactions and poll status (Pending/Success/Failed).
+- Added Security Actions audit tab with filters, sorting, CSV export, and detail view.
+- Actions grid/detail now show principal/related name with type suffix, owner name, and error message.
 
 Behavior details
-- Manage actions call custom connector operation SimpleSecurityAction with body parameters (ope_Operation, ope_PrincipalType, ope_PrincipalId, ope_RelatedType, ope_RelatedId).
+- Manage actions create ope_simplesecurityactions records and poll for status updates; owner fields are not set on create.
+- Actions tab queries valid columns only and uses formatted lookup values (_ope_principaluser_value, _ope_relatedrole_value, _ownerid_value) for display.
 - Manage modal refreshes detail data after action completes to keep direct/inherited lists in sync.
 - User search inside manage modal fetches users with same filters as list, supports hide MS users and status filter.
 
 Important files
-- src/App.tsx (manage modal UI, manage actions, business unit validation)
-- src/App.css (manage modal styles, danger buttons)
-- src/simpleSecurityAction.ts (custom connector call)
-- .power/schemas/appschemas/dataSourcesInfo.ts (connector data source entry)
+- src/App.tsx (manage modal UI, audit tab UI, action history queries)
+- src/App.css (manage modal styles, notice styles)
+- src/simpleSecurityAction.ts (create/poll custom table records)
+- src/generated/models/Ope_simplesecurityactionsModel.ts
+- src/generated/services/Ope_simplesecurityactionsService.ts
+- .power/schemas/dataverse/simplesecurityactions.Schema.json
 
 Files touched
 - src/App.tsx
 - src/App.css
 - src/simpleSecurityAction.ts
+- src/generated/models/Ope_simplesecurityactionsModel.ts
+- src/generated/services/Ope_simplesecurityactionsService.ts
+- .power/schemas/dataverse/simplesecurityactions.Schema.json
 
 Notes
 - Build and deploy: npm run build then pac code push.
 - Current branch: security-management-api (pushed to origin).
-- Custom connector apiId: shared_simplesecurityaction-5f9502eaa715bb753a-5fe3bd4ed65c4ae136
-- Custom connector connectionId (env dd8f6081-3275-efb0-8e21-43ac6419d90a): 4f9a2fff43e54c848f71dc8dc50bbd2b
-- Dataverse custom API name: ope_simplesecurityaction (invoked via connector, not dataverseRequest action).
+- Dataverse table: ope_simplesecurityactions (entity set ope_simplesecurityactions).
+- Status codes: Pending=1, Success=884680001, Failed=884680002.
+- Operation values: associate=884680000, disassociate=884680001.
+- Related type values: role=884680000, team=884680001, columnsecurityprofile=884680002.
 
 Starting point for new changes
 - Check git status: git status -sb
@@ -45,3 +52,4 @@ Starting point for new changes
 Known quirks
 - OData filters: avoid formatted fields in select; use formatted annotation values for display.
 - skipToken pagination is used for list loading.
+- Actions tab must select lookup value fields (e.g., _ope_principaluser_value) to access formatted names.
