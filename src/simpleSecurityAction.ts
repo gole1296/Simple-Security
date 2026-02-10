@@ -1,6 +1,7 @@
 import {
   Ope_simplesecurityactionsService,
 } from './generated'
+import { checkLicenseStatus } from './license'
 import type {
   Ope_simplesecurityactionsope_operation,
   Ope_simplesecurityactionsope_principletype,
@@ -53,6 +54,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 export const runSimpleSecurityAction = async (
   params: SimpleSecurityActionParams
 ): Promise<SimpleSecurityActionResponse> => {
+  // License check before mutation
+  const license = await checkLicenseStatus();
+  if (!license.licensed) {
+    throw new Error(license.message || 'App is not licensed. Cannot perform this action.');
+  }
+
   const record = {
     ope_name: `Security ${params.operation} ${new Date().toISOString()}`,
     ope_operation: operationValues[params.operation],

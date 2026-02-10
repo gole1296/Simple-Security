@@ -22,6 +22,7 @@ export * as TeamprofilescollectionModel from './models/TeamprofilescollectionMod
 export * as TeamrolescollectionModel from './models/TeamrolescollectionModel';
 export * as TeamsModel from './models/TeamsModel';
 export * as TeamtemplatesModel from './models/TeamtemplatesModel';
+export * as _8035LicenseModel from './models/_8035LicenseModel';
 
 // Services
 export * from './services/BusinessunitsService';
@@ -41,3 +42,4 @@ export * from './services/TeamprofilescollectionService';
 export * from './services/TeamrolescollectionService';
 export * from './services/TeamsService';
 export * from './services/TeamtemplatesService';
+export * from './services/_8035LicenseService';

@@ -99,5 +99,15 @@
       "actions": null
     }
   },
-  "version": "1.0"
+  "version": "1.0",
+  "connectionReferences": {
+    "740e9fe3-8d88-406e-9ddc-aa496f369c82": {
+      "id": "/providers/Microsoft.PowerApps/apis/shared_ope-5f8035license-5f9502eaa715bb753a",
+      "displayName": "8035License",
+      "dataSources": [
+        "ope_5f8035license_5f9502eaa715bb753a"
+      ],
+      "dataSets": {}
+    }
+  }
 }

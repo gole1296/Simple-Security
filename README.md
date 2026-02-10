@@ -138,3 +138,27 @@ pac code push
 - Map the connection reference during import.
 
 The app uses the connector to call `ope_simplesecurityaction` in the current user context, so users must have Dataverse privileges for the association/disassociation actions.
+
+## License Key Setup and Validation
+
+This app requires a valid license key to function. If the app is not licensed, you will see a blocking message and will not be able to use its features.
+
+### How to Enter or Update Your License Key
+
+1. Open the app. If not licensed, a message will appear with a button to enter or update your license key.
+2. Click the "Enter/Update License Key" button.
+3. Paste your license key and click Save. The app will validate the key and unlock if valid.
+4. You can update the license key at any time from the same dialog.
+
+### How Licensing Works
+- The app checks your license key against a central service once per day.
+- If the license is expired or invalid, the app will block access until a valid key is entered.
+- No secrets or credentials are stored in the app; only the license key is needed.
+
+### Troubleshooting
+- If you see a message about license status not being active, contact your vendor to renew or check your license.
+- If you update your license key, the app will re-validate immediately.
+
+---
+
+For more information, contact support or your vendor.
