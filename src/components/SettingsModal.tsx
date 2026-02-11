@@ -233,6 +233,27 @@ export function SettingsModal({
             Close
           </button>
         </div>
+
+        {/* Developer Branding */}
+        <div style={{
+          marginTop: '24px',
+          paddingTop: '16px',
+          borderTop: '1px solid #e0e0e0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          justifyContent: 'center',
+          opacity: 0.7,
+        }}>
+          <img 
+            src="/8035-solutions-logo.png" 
+            alt="8035 Solutions" 
+            style={{ height: '32px', width: 'auto' }}
+          />
+          <span style={{ fontSize: '13px', color: '#666' }}>
+            App developed by <strong>8035 Solutions</strong>
+          </span>
+        </div>
       </div>
     </div>
   );

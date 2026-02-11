@@ -1,7 +1,7 @@
 {
   "appId": "f4edc6c7-4426-4bb4-ba81-018b70fdfbe7",
   "appDisplayName": "Simple Security",
-  "description": null,
+  "description": "A comprehensive security management application for Microsoft Dataverse that simplifies user, team, and role administration. Manage security roles, field-level security profiles, and view detailed access permissions across your organization.",
   "environmentId": "dd8f6081-3275-efb0-8e21-43ac6419d90a",
   "buildPath": "./dist",
   "buildEntryPoint": "index.html",
