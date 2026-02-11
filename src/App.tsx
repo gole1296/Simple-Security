@@ -4530,6 +4530,7 @@ function App() {
         onClose={() => setSettingsModalOpen(false)}
         licenseStatus={licenseStatus}
         onLicenseUpdated={setLicenseStatus}
+        theme={theme}
       />
     </div>
   )

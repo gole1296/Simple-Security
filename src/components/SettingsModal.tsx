@@ -8,6 +8,7 @@ export interface SettingsModalProps {
   onClose: () => void;
   licenseStatus: LicenseStatus | null;
   onLicenseUpdated: (status: LicenseStatus) => void;
+  theme: 'earth' | 'night' | 'clean-slate';
 }
 
 export function SettingsModal({
@@ -15,6 +16,7 @@ export function SettingsModal({
   onClose,
   licenseStatus,
   onLicenseUpdated,
+  theme,
 }: SettingsModalProps) {
   const [licenseKeyInput, setLicenseKeyInput] = React.useState(() => getStoredLicenseKey() || '');
   const [loading, setLoading] = React.useState(false);
@@ -87,7 +89,7 @@ export function SettingsModal({
         left: 0,
         width: '100vw',
         height: '100vh',
-        background: 'rgba(0,0,0,0.5)',
+        background: 'var(--color-overlay)',
         zIndex: 10001,
         display: 'flex',
         alignItems: 'center',
@@ -97,19 +99,22 @@ export function SettingsModal({
     >
       <div
         style={{
-          background: '#fff',
+          background: 'var(--color-surface-strong)',
+          color: 'var(--color-text)',
           padding: '32px',
           borderRadius: '8px',
           minWidth: '400px',
           maxWidth: '500px',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+          boxShadow: 'var(--shadow-floating)',
+          border: '1px solid var(--color-border)',
         }}
         onClick={(e) => e.stopPropagation()}
+        data-theme={theme}
       >
         <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Settings</h3>
 
         {/* License Information Section */}
-        <div style={{ marginBottom: '24px', padding: '12px', background: '#f5f5f5', borderRadius: '4px' }}>
+        <div style={{ marginBottom: '24px', padding: '12px', background: 'var(--color-surface-muted)', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
           <h4 style={{ marginTop: 0, marginBottom: '8px' }}>License Status</h4>
           <p style={{ margin: '4px 0', fontSize: '14px' }}>
             <strong>Status:</strong> {licenseStatus?.licensed ? '✓ Licensed' : '✗ Not Licensed'}
@@ -120,7 +125,7 @@ export function SettingsModal({
             </p>
           )}
           {licenseStatus?.message && (
-            <p style={{ margin: '4px 0', fontSize: '14px', color: licenseStatus.licensed ? '#080' : '#b00' }}>
+            <p style={{ margin: '4px 0', fontSize: '14px', color: licenseStatus.licensed ? 'var(--color-success)' : 'var(--color-danger)' }}>
               <strong>Message:</strong> {licenseStatus.message}
             </p>
           )}
@@ -135,16 +140,16 @@ export function SettingsModal({
             width: '100%',
             padding: '8px',
             marginBottom: '12px',
-            border: '1px solid #ddd',
+            border: '1px solid var(--color-border)',
             borderRadius: '4px',
-            background: '#f9f9f9',
+            background: 'var(--color-surface-muted)',
             fontFamily: 'monospace',
             fontSize: '12px',
             wordBreak: 'break-all',
             minHeight: '32px',
             display: 'flex',
             alignItems: 'center',
-            color: getStoredLicenseKey() ? '#000' : '#999',
+            color: getStoredLicenseKey() ? 'var(--color-text)' : 'var(--color-text-subtle)',
           }}>
             {getStoredLicenseKey() || '(No key set)'}
           </div>
@@ -160,10 +165,12 @@ export function SettingsModal({
               width: '100%',
               padding: '8px',
               marginBottom: '12px',
-              border: '1px solid #ddd',
+              border: '1px solid var(--color-border)',
               borderRadius: '4px',
               boxSizing: 'border-box',
               fontFamily: 'monospace',
+              background: 'var(--color-surface)',
+              color: 'var(--color-text)',
             }}
             disabled={loading}
             placeholder="Paste a new license key to update"
@@ -204,14 +211,14 @@ export function SettingsModal({
 
         {/* Error Message */}
         {error && (
-          <p style={{ color: '#b00', marginBottom: '12px', padding: '8px', background: '#ffe6e6', borderRadius: '4px' }}>
+          <p style={{ color: 'var(--color-danger)', marginBottom: '12px', padding: '8px', background: 'var(--color-danger-bg)', borderRadius: '4px', border: '1px solid var(--color-danger-border)' }}>
             {error}
           </p>
         )}
 
         {/* Success Message */}
         {success && (
-          <p style={{ color: '#080', marginBottom: '12px', padding: '8px', background: '#e6ffe6', borderRadius: '4px' }}>
+          <p style={{ color: 'var(--color-success)', marginBottom: '12px', padding: '8px', background: 'var(--color-success-bg)', borderRadius: '4px', border: '1px solid var(--color-success-border)' }}>
             ✓ License verified successfully!
           </p>
         )}
@@ -239,7 +246,7 @@ export function SettingsModal({
         <div style={{
           marginTop: '24px',
           paddingTop: '16px',
-          borderTop: '1px solid #e0e0e0',
+          borderTop: '1px solid var(--color-border)',
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
@@ -251,7 +258,7 @@ export function SettingsModal({
             alt="8035 Solutions" 
             style={{ height: '32px', width: 'auto' }}
           />
-          <span style={{ fontSize: '13px', color: '#666' }}>
+          <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
             App developed by <strong>8035 Solutions</strong>
           </span>
         </div>
