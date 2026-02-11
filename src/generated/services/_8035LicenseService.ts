@@ -16,9 +16,9 @@ export class _8035LicenseService {
    * Checks license validity
    * Checks license validity
    */
-  public static async CheckLicenseStatus(licenseKey?: string, tenantId?: string): Promise<IOperationResult<void>> {
-    const params: { licenseKey?: string, tenantId?: string } = { licenseKey, tenantId };
-    const result = await _8035LicenseService.client.executeAsync<{ licenseKey?: string, tenantId?: string }, void>(
+  public static async CheckLicenseStatus(licenseKey: string, tenantId: string, productId: string): Promise<IOperationResult<void>> {
+    const params: { licenseKey: string, tenantId: string, productId: string } = { licenseKey, tenantId, productId };
+    const result = await _8035LicenseService.client.executeAsync<{ licenseKey: string, tenantId: string, productId: string }, void>(
       {
         connectorOperation: {
           tableName: _8035LicenseService.dataSourceName,

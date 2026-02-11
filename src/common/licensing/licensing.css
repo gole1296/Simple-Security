@@ -1,0 +1,158 @@
+.license-overlay {
+  position: fixed;
+  inset: 0;
+  background: #ffffff;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+}
+
+.license-card {
+  max-width: 520px;
+  width: calc(100% - 48px);
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 12px;
+  padding: 28px;
+  box-shadow: var(--shadow-panel, 0 20px 40px rgba(0, 0, 0, 0.08));
+  text-align: left;
+}
+
+.license-description {
+  margin: 8px 0 18px;
+  color: var(--color-text-muted, #555);
+}
+
+.license-status-box {
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 10px;
+  padding: 16px;
+  background: var(--color-surface-muted, #f7f7f7);
+  margin-bottom: 18px;
+}
+
+.license-status-box.compact {
+  margin-bottom: 16px;
+}
+
+.license-status-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.license-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-subtle, #6c6c6c);
+}
+
+.license-value {
+  font-size: 14px;
+  color: var(--color-text, #222);
+}
+
+.license-value.ok {
+  color: var(--color-success, #18864b);
+  font-weight: 600;
+}
+
+.license-value.fail {
+  color: var(--color-danger, #b3261e);
+  font-weight: 600;
+}
+
+.license-value.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  word-break: break-all;
+}
+
+.license-message {
+  color: var(--color-danger, #b3261e);
+  font-weight: 600;
+  margin: 12px 0;
+}
+
+.license-success {
+  color: var(--color-success, #18864b);
+  font-weight: 600;
+  margin: 12px 0;
+}
+
+.license-primary,
+.license-secondary {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.license-primary {
+  background: var(--color-accent, #2dd4bf);
+  color: #fff;
+}
+
+.license-secondary {
+  background: var(--color-surface-alt, #f1f1f1);
+  color: var(--color-text, #222);
+}
+
+.license-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.license-modal {
+  width: min(520px, 100%);
+  background: var(--color-surface, #fff);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow-floating, 0 24px 50px rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--color-border, #e0e0e0);
+}
+
+.license-input-label {
+  display: block;
+  margin: 10px 0 6px;
+  font-weight: 600;
+}
+
+.license-key-box {
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--color-surface-muted, #f7f7f7);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12px;
+  word-break: break-all;
+  margin-bottom: 12px;
+}
+
+.license-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #222);
+}
+
+.license-modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.license-modal-actions.end {
+  justify-content: flex-end;
+}

@@ -96,8 +96,12 @@ export async function checkLicenseStatus(key?: string, forceRefresh?: boolean): 
 
   // Call connector
   try {
-    console.log('[License] Calling _8035LicenseService.CheckLicenseStatus...');
-    const result = await _8035LicenseService.CheckLicenseStatus(licenseKey, tenantId);
+    console.log('[License] Calling _8035LicenseService.CheckLicenseStatus with params:', {
+      licenseKey: licenseKey ? `${licenseKey.substring(0, 10)}...` : 'none',
+      tenantId: tenantId || '(empty string)',
+      productId: 'SimpleSecurity'
+    });
+    const result = await _8035LicenseService.CheckLicenseStatus(licenseKey, tenantId || '', "SimpleSecurity");
     console.log('[License] Raw service response:', result);
     
     // Extract the actual license data from nested response structure

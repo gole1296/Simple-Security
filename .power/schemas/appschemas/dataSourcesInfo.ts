@@ -143,13 +143,19 @@ export const dataSourcesInfo = {
           {
             "name": "licenseKey",
             "in": "query",
-            "required": false,
+            "required": true,
             "type": "string"
           },
           {
             "name": "tenantId",
             "in": "query",
-            "required": false,
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "required": true,
             "type": "string"
           }
         ],
