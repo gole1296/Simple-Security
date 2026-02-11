@@ -1,6 +1,7 @@
 import React from 'react';
 import { getStoredLicenseKey, clearLicenseCache, checkLicenseStatus } from '../license';
 import type { LicenseStatus } from '../license';
+import logo8035 from '../assets/8035-solutions-logo.png';
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -246,7 +247,7 @@ export function SettingsModal({
           opacity: 0.7,
         }}>
           <img 
-            src="/8035-solutions-logo.png" 
+            src={logo8035} 
             alt="8035 Solutions" 
             style={{ height: '32px', width: 'auto' }}
           />
