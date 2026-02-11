@@ -101,7 +101,7 @@
   },
   "version": "1.0",
   "connectionReferences": {
-    "740e9fe3-8d88-406e-9ddc-aa496f369c82": {
+    "5bb223dd-a520-4847-956b-6852f38d48ea": {
       "id": "/providers/Microsoft.PowerApps/apis/shared_ope-5f8035license-5f9502eaa715bb753a",
       "displayName": "8035License",
       "dataSources": [

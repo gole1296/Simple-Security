@@ -70,6 +70,12 @@
                 "in": "query",
                 "required": false,
                 "type": "string"
+              },
+              {
+                "name": "tenantId",
+                "in": "query",
+                "required": false,
+                "type": "string"
               }
             ],
             "summary": "Checks license validity",
@@ -112,8 +118,8 @@
     "capabilities": [],
     "description": "8035 Solutions Licensing validation",
     "apiDefinitions": {
-      "originalSwaggerUrl": "https://usa002004wus3ext.blob.core.windows.net/api-swagger-files/unitedstates-002/ope-5f8035license-5f9502eaa715bb753a.json_original?skoid=e6898b49-53e1-4e33-bbf3-f68cbec72336&sktid=33e01921-4d64-4f8c-a055-5bdaffd5e33d&skt=2026-02-10T05%3A22%3A46Z&ske=2026-02-11T05%3A22%3A46Z&sks=b&skv=2025-01-05&sv=2025-01-05&spr=https&se=2026-02-10T14%3A32%3A07Z&sr=b&sp=r&sig=Awz8%2BiPvJF06LznDO%2F2xi%2BDDtpxYkeh%2Fwq68Mw%2BvMH8%3D",
-      "modifiedSwaggerUrl": "https://usa002004wus3ext.blob.core.windows.net/api-swagger-files/unitedstates-002/ope-5f8035license-5f9502eaa715bb753a.json?skoid=e6898b49-53e1-4e33-bbf3-f68cbec72336&sktid=33e01921-4d64-4f8c-a055-5bdaffd5e33d&skt=2026-02-10T05%3A22%3A46Z&ske=2026-02-11T05%3A22%3A46Z&sks=b&skv=2025-01-05&sv=2025-01-05&spr=https&se=2026-02-10T14%3A32%3A07Z&sr=b&sp=r&sig=PJFu%2Fg3%2FTT5YVOx7yPXNfB2q3A7RDR0BRRiJNKqpVnw%3D"
+      "originalSwaggerUrl": "https://usa002004wus3ext.blob.core.windows.net/api-swagger-files/unitedstates-002/ope-5f8035license-5f9502eaa715bb753a.json_original?skoid=e6898b49-53e1-4e33-bbf3-f68cbec72336&sktid=33e01921-4d64-4f8c-a055-5bdaffd5e33d&skt=2026-02-10T20%3A05%3A26Z&ske=2026-02-11T20%3A05%3A26Z&sks=b&skv=2025-01-05&sv=2025-01-05&spr=https&se=2026-02-11T04%3A37%3A06Z&sr=b&sp=r&sig=%2FM74WlPHTgvwtw7kvj5GLOQ%2Bhtnc6Efk2715ZPbxmss%3D",
+      "modifiedSwaggerUrl": "https://usa002004wus3ext.blob.core.windows.net/api-swagger-files/unitedstates-002/ope-5f8035license-5f9502eaa715bb753a.json?skoid=e6898b49-53e1-4e33-bbf3-f68cbec72336&sktid=33e01921-4d64-4f8c-a055-5bdaffd5e33d&skt=2026-02-10T20%3A05%3A26Z&ske=2026-02-11T20%3A05%3A26Z&sks=b&skv=2025-01-05&sv=2025-01-05&spr=https&se=2026-02-11T04%3A37%3A06Z&sr=b&sp=r&sig=0EKuhvIJSqi9AP1JtzT0IQ88urx2O1NeQeecQw7ELxY%3D"
     },
     "backendService": {
       "serviceUrl": "https://fa-license-validation-h2fubnczf4dwhed8.centralus-01.azurewebsites.net/"
@@ -135,7 +141,7 @@
       "userPrincipalName": "TomGioielli@8035Solutions.onmicrosoft.com"
     },
     "createdTime": "2026-02-10T13:22:10.7021622Z",
-    "changedTime": "2026-02-10T13:31:22.4815018Z",
+    "changedTime": "2026-02-11T03:36:26.6588279Z",
     "environment": {
       "id": "/providers/Microsoft.PowerApps/environments/dd8f6081-3275-efb0-8e21-43ac6419d90a",
       "name": "dd8f6081-3275-efb0-8e21-43ac6419d90a"

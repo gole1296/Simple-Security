@@ -145,6 +145,12 @@ export const dataSourcesInfo = {
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "tenantId",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "responseInfo": {

@@ -2,6 +2,7 @@
 // License validation utility for Simple Security app
 
 import { _8035LicenseService } from './generated/services/_8035LicenseService';
+import { getContext } from '@microsoft/power-apps/app';
 
 const LICENSE_KEY_STORAGE = 'simple-security-license-key';
 const LICENSE_STATUS_STORAGE = 'simple-security-license-status';
@@ -83,10 +84,20 @@ export async function checkLicenseStatus(key?: string, forceRefresh?: boolean): 
     };
   }
   
+  // Get tenant ID from Power Apps context
+  let tenantId: string | undefined;
+  try {
+    const ctx = await getContext();
+    tenantId = ctx.user.tenantId;
+    console.log('[License] Retrieved tenant ID from context:', tenantId);
+  } catch (contextError) {
+    console.warn('[License] Failed to get context, proceeding without tenant ID:', contextError);
+  }
+
   // Call connector
   try {
     console.log('[License] Calling _8035LicenseService.CheckLicenseStatus...');
-    const result = await _8035LicenseService.CheckLicenseStatus(licenseKey);
+    const result = await _8035LicenseService.CheckLicenseStatus(licenseKey, tenantId);
     console.log('[License] Raw service response:', result);
     
     // Extract the actual license data from nested response structure
