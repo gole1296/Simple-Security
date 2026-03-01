@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="800" viewBox="0 0 1400 800" role="img" aria-label="Teams Tab Placeholder">
+  <rect width="1400" height="800" fill="#f2f4f7" />
+  <rect x="36" y="36" width="1328" height="728" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+  <text x="700" y="380" font-family="Segoe UI, Arial, sans-serif" font-size="42" text-anchor="middle" fill="#57606a">Teams Tab Placeholder</text>
+  <text x="700" y="430" font-family="Segoe UI, Arial, sans-serif" font-size="22" text-anchor="middle" fill="#6e7781">Replace with a screenshot of the Teams view</text>
+</svg>

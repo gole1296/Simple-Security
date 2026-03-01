@@ -24,12 +24,9 @@ export * as TeamsModel from './models/TeamsModel';
 export * as TeamtemplatesModel from './models/TeamtemplatesModel';
 
 // Services
-export * from './services/BusinessunitsService';
 export * from './services/FieldpermissionsService';
 export * from './services/FieldsecurityprofilesService';
 export * from './services/Ope_simplesecurityactionsService';
-export * from './services/PrincipalobjectaccesssetService';
-export * from './services/PrincipalobjectattributeaccesssetService';
 export * from './services/PrivilegesService';
 export * from './services/RoleprivilegescollectionService';
 export * from './services/RolesService';
@@ -40,4 +37,3 @@ export * from './services/TeammembershipsService';
 export * from './services/TeamprofilescollectionService';
 export * from './services/TeamrolescollectionService';
 export * from './services/TeamsService';
-export * from './services/TeamtemplatesService';

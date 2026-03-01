@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="600" viewBox="0 0 1600 600" role="img" aria-label="Header Placeholder">
+  <rect width="1600" height="600" fill="#f2f4f7" />
+  <rect x="40" y="40" width="1520" height="520" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+  <text x="800" y="280" font-family="Segoe UI, Arial, sans-serif" font-size="44" text-anchor="middle" fill="#57606a">Header Screenshot Placeholder</text>
+  <text x="800" y="330" font-family="Segoe UI, Arial, sans-serif" font-size="24" text-anchor="middle" fill="#6e7781">Replace this file with your final app header screenshot</text>
+</svg>

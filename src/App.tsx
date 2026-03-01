@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { SettingsModal } from './components/SettingsModal'
@@ -415,7 +416,7 @@ const canonicalizeScopeLabel = (scope: string) => {
   const normalized = scope
     .trim()
     .toLowerCase()
-    .replace(/[\/_-]+/g, ' ')
+    .replace(/[/_-]+/g, ' ')
     .replace(/\s+/g, ' ')
 
   if (!normalized || normalized === 'none') return 'None'
@@ -2154,6 +2155,7 @@ function App() {
     return result.data
   }
 
+  // Initial bootstrap load intentionally runs once; subsequent refreshes are handled by scoped effects.
   useEffect(() => {
     void loadUsersPage()
     void loadTeamsPage()
