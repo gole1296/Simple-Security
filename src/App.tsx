@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-import {
-  checkLicenseStatus,
-  setStoredLicenseKey,
-  getStoredLicenseKey,
-} from './license'
-import type { LicenseStatus } from './license'
 import { SettingsModal } from './components/SettingsModal'
 import {
   FieldpermissionsService,
@@ -318,13 +312,7 @@ const extractEntitySchemaFromPrivilege = (name?: string) => {
 }
 
 function App() {
-  // License state
-  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null)
-  const [licenseModalOpen, setLicenseModalOpen] = useState(() => !getStoredLicenseKey())
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
-  const [licenseKeyInput, setLicenseKeyInput] = useState<string>(() => getStoredLicenseKey() || '')
-  const [licenseCheckLoading, setLicenseCheckLoading] = useState(false)
-  const [licenseCheckError, setLicenseCheckError] = useState<string | null>(null)
 
   // Theme and app state
   const [theme, setTheme] = useState<'earth' | 'night' | 'clean-slate'>(() => {
@@ -344,60 +332,6 @@ function App() {
     'enabled'
   )
   const [teamSearch, setTeamSearch] = useState('')
-
-  // On mount, check license
-  useEffect(() => {
-    console.log('License check starting...')
-    let isActive = true
-    setLicenseCheckLoading(true)
-    checkLicenseStatus().then((status) => {
-      console.log('License status received:', status)
-      if (isActive) setLicenseStatus(status)
-    }).catch((_e) => {
-      console.error('License check failed:', _e)
-      if (isActive) setLicenseStatus({
-        licensed: false,
-        validTo: '',
-        productId: '',
-        message: 'License check failed',
-      })
-    }).finally(() => {
-      if (isActive) setLicenseCheckLoading(false)
-    })
-    return () => { isActive = false }
-  }, [])
-
-  // Handler for license key update
-  const handleLicenseKeySave = async () => {
-    console.log('[App] handleLicenseKeySave called')
-    setLicenseCheckLoading(true)
-    setLicenseCheckError(null)
-    const key = licenseKeyInput.trim()
-    console.log('[App] Storing license key and forcing refresh...')
-    setStoredLicenseKey(key)
-    try {
-      console.log('[App] Calling checkLicenseStatus with key and forceRefresh=true...')
-      const status = await checkLicenseStatus(key, true)
-      console.log('[App] Received license status:', status)
-      setLicenseStatus(status)
-      if (status.licensed) {
-        console.log('[App] License is valid, closing modal')
-        setLicenseModalOpen(false)
-      } else {
-        console.log('[App] License is not valid, showing error:', status.message)
-        setLicenseCheckError(status.message || 'License verification failed')
-      }
-    } catch (e: any) {
-      console.error('[App] Error checking license:', e)
-      const errorMsg = e?.message || 'License check failed'
-      setLicenseCheckError(errorMsg)
-    } finally {
-      setLicenseCheckLoading(false)
-    }
-  }
-
-  // Block UI if not licensed
-  const showLicenseBlock = !licenseStatus?.licensed
 
   const [teamTypeFilter, setTeamTypeFilter] = useState<'all' | '0' | '1' | '2' | '3'>('all')
   const [roleSearch, setRoleSearch] = useState('')
@@ -2135,187 +2069,6 @@ function App() {
 
   return (
     <div className={`app-shell theme-${theme}`}>
-      {/* Show license block as overlay if not licensed */}
-      {showLicenseBlock && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          background: '#fff',
-          zIndex: 9999,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontFamily: 'sans-serif',
-        }}>
-          <div style={{ textAlign: 'center', maxWidth: '500px', padding: '20px' }}>
-            <h2>License Information</h2>
-            
-            {/* License Status Box */}
-            <div style={{ marginBottom: '24px', padding: '16px', background: '#f9f9f9', border: '1px solid #ddd', borderRadius: '6px', textAlign: 'left' }}>
-              <div style={{ marginBottom: '12px' }}>
-                <strong style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Status</strong>
-                <div style={{ fontSize: '16px', color: licenseStatus?.licensed ? '#080' : '#b00', fontWeight: 600 }}>
-                  {licenseStatus?.licensed ? '✓ Licensed' : '✗ Not Licensed'}
-                </div>
-              </div>
-              
-              {licenseStatus?.validTo && (
-                <div style={{ marginBottom: '12px' }}>
-                  <strong style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Valid Until</strong>
-                  <div style={{ fontSize: '14px' }}>{licenseStatus.validTo}</div>
-                </div>
-              )}
-              
-              {licenseStatus?.productId && (
-                <div style={{ marginBottom: '12px' }}>
-                  <strong style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Product</strong>
-                  <div style={{ fontSize: '14px' }}>{licenseStatus.productId}</div>
-                </div>
-              )}
-              
-              {getStoredLicenseKey() && (
-                <div>
-                  <strong style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>License Key</strong>
-                  <div style={{ fontSize: '13px', fontFamily: 'monospace', padding: '8px', background: '#fff', border: '1px solid #ddd', borderRadius: '4px', wordBreak: 'break-all', marginTop: '4px' }}>
-                    {getStoredLicenseKey()}
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            {licenseStatus?.message && !licenseStatus.licensed && (
-              <p style={{ color: '#b00', fontWeight: 600, marginBottom: '20px' }}>{licenseStatus.message}</p>
-            )}
-            
-            <button 
-              onClick={() => setLicenseModalOpen(true)} 
-              style={{ padding: '10px 20px', marginTop: '20px', fontSize: '16px', cursor: 'pointer', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px' }}
-            >
-              Update License Key
-            </button>
-          </div>
-
-          {/* License key update modal */}
-          {licenseModalOpen && (
-            <div style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              background: 'rgba(0,0,0,0.5)',
-              zIndex: 10000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <div style={{ background: '#fff', padding: '32px', borderRadius: '8px', minWidth: '420px', maxWidth: '500px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
-                <h3 style={{ marginTop: 0, marginBottom: '16px' }}>Update License Key</h3>
-                
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '14px' }}>
-                  Enter your license key:
-                </label>
-                <input
-                  type="text"
-                  value={licenseKeyInput}
-                  onChange={e => setLicenseKeyInput(e.target.value)}
-                  style={{ 
-                    width: '100%', 
-                    padding: '10px', 
-                    marginBottom: '16px', 
-                    boxSizing: 'border-box', 
-                    border: '1px solid #ddd', 
-                    borderRadius: '4px',
-                    fontFamily: 'monospace',
-                    fontSize: '13px'
-                  }}
-                  disabled={licenseCheckLoading}
-                  placeholder="Paste your license key here"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !licenseCheckLoading && licenseKeyInput.trim()) {
-                      handleLicenseKeySave()
-                    }
-                  }}
-                  autoFocus
-                />
-                
-                {/* Status message area */}
-                {licenseCheckError && (
-                  <div style={{ marginBottom: '16px', padding: '12px', background: '#fee', border: '1px solid #fcc', borderRadius: '4px', color: '#b00', fontSize: '14px' }}>
-                    <strong>Error:</strong> {licenseCheckError}
-                  </div>
-                )}
-                
-                {licenseCheckLoading && (
-                  <div style={{ marginBottom: '16px', padding: '12px', textAlign: 'center', color: '#666', fontSize: '14px' }}>
-                    <div style={{ marginBottom: '8px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        width: '16px',
-                        height: '16px',
-                        border: '3px solid #f3f3f3',
-                        borderTop: '3px solid #007bff',
-                        borderRadius: '50%',
-                        animation: 'spin 1s linear infinite',
-                      }} />
-                    </div>
-                    Verifying license with Azure...
-                  </div>
-                )}
-                
-                {/* Buttons */}
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                  <button 
-                    onClick={() => {
-                      setLicenseModalOpen(false)
-                      setLicenseCheckError(null)
-                    }}
-                    disabled={licenseCheckLoading} 
-                    style={{ 
-                      padding: '10px 20px', 
-                      background: '#6c757d', 
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: licenseCheckLoading ? 'not-allowed' : 'pointer',
-                      opacity: licenseCheckLoading ? 0.6 : 1,
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={handleLicenseKeySave} 
-                    disabled={licenseCheckLoading || !licenseKeyInput.trim()} 
-                    style={{ 
-                      padding: '10px 20px', 
-                      background: '#28a745',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: licenseCheckLoading || !licenseKeyInput.trim() ? 'not-allowed' : 'pointer',
-                      opacity: licenseCheckLoading || !licenseKeyInput.trim() ? 0.6 : 1,
-                    }}
-                  >
-                    {licenseCheckLoading ? 'Verifying...' : 'Verify'}
-                  </button>
-                </div>
-              </div>
-              
-              {/* Add CSS animation for spinner */}
-              <style>{`
-                @keyframes spin {
-                  0% { transform: rotate(0deg); }
-                  100% { transform: rotate(360deg); }
-                }
-              `}</style>
-            </div>
-          )}
-        </div>
-      )}
       <aside className={`side-nav ${navCollapsed ? 'is-collapsed' : ''}`}>
         <div className="side-nav-header">
           <button
@@ -4528,8 +4281,6 @@ function App() {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
-        licenseStatus={licenseStatus}
-        onLicenseUpdated={setLicenseStatus}
         theme={theme}
       />
     </div>
