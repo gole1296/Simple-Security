@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-import {
-  checkLicenseStatus,
-  setStoredLicenseKey,
-  getStoredLicenseKey,
-} from './license'
-import type { LicenseStatus } from './license'
 import { SettingsModal } from './components/SettingsModal'
 import {
   FieldpermissionsService,
@@ -42,6 +36,8 @@ const USER_PAGE_SIZE = 500
 const ROLE_PAGE_SIZE = 200
 const RELATIONSHIP_PAGE_SIZE = 200
 const ACTION_PAGE_SIZE = 50
+const REPORT_PREVIEW_ROW_LIMIT = 150
+const REPORT_PREVIEW_COLUMN_LIMIT = 25
 
 const ACTION_OPERATION_VALUES = {
   associate: 884680000,
@@ -130,6 +126,48 @@ type LabeledProfile = {
 }
 
 type ManageModalType = 'user' | 'team' | 'role' | 'profile'
+
+type ReportType = 'usersByRole' | 'usersByProfile' | 'permissionFinder'
+
+type MatrixCellStatus = '' | 'Direct' | 'Inherited' | 'Both'
+
+type MatrixReportRow = {
+  id: string
+  label: string
+  cells: MatrixCellStatus[]
+}
+
+type MatrixReportResult = {
+  kind: 'matrix'
+  title: string
+  rowLabel: string
+  columnLabel: string
+  columns: { id: string; label: string }[]
+  rows: MatrixReportRow[]
+  csvFileName: string
+  csvHeader: string[]
+  csvRows: string[][]
+}
+
+type ComparisonReportRow = {
+  key: string
+  itemName: string
+  detail: string
+  values: string[]
+}
+
+type ComparisonReportResult = {
+  kind: 'comparison'
+  title: string
+  itemLabel: string
+  compareColumns: { id: string; label: string }[]
+  rows: ComparisonReportRow[]
+  csvFileName: string
+  csvHeader: string[]
+  csvRows: string[][]
+}
+
+type ReportResult = MatrixReportResult | ComparisonReportResult
 
 type ManageModalState = {
   type: ManageModalType
@@ -317,14 +355,101 @@ const extractEntitySchemaFromPrivilege = (name?: string) => {
   return entity.toLowerCase()
 }
 
+const ROLE_PERMISSION_ACTIONS = [
+  'Create',
+  'Read',
+  'Write',
+  'Delete',
+  'Append',
+  'AppendTo',
+  'Assign',
+  'Share',
+] as const
+
+const PERMISSION_FINDER_ACTIONS = [
+  'Create',
+  'Read',
+  'Write',
+  'Delete',
+  'Append',
+  'AppendTo',
+  'Share',
+  'Assign',
+] as const
+const PERMISSION_FINDER_ACTION_SET = new Set<string>(PERMISSION_FINDER_ACTIONS)
+
+const rolePermissionLabel = (action: (typeof ROLE_PERMISSION_ACTIONS)[number]) =>
+  action === 'AppendTo' ? 'Append To' : action
+
+const parsePrivilegeActionAndTable = (name?: string) => {
+  if (!name) return null
+  const trimmed = name.startsWith('prv') ? name.slice(3) : name
+  const action = [...ROLE_PERMISSION_ACTIONS]
+    .sort((a, b) => b.length - a.length)
+    .find((entry) => trimmed.startsWith(entry))
+  if (!action) return null
+  const table = trimmed.slice(action.length)
+  if (!table) return null
+  return { action, table: table.toLowerCase() }
+}
+
+const roleDepthRank = (value?: string | number) => {
+  const depth = Number(value ?? 0)
+  if (depth >= 8) return 4
+  if (depth >= 4) return 3
+  if (depth >= 2) return 2
+  if (depth >= 1) return 1
+  return 0
+}
+
+const roleDepthLabel = (value?: string | number) => {
+  const depth = Number(value ?? 0)
+  if (depth >= 8) return 'Organization'
+  if (depth >= 4) return 'Parent: Child Business Units'
+  if (depth >= 2) return 'Business Unit'
+  if (depth >= 1) return 'User'
+  return 'None'
+}
+
+const canonicalizeScopeLabel = (scope: string) => {
+  const normalized = scope
+    .trim()
+    .toLowerCase()
+    .replace(/[\/_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+
+  if (!normalized || normalized === 'none') return 'None'
+  if (normalized.includes('organization')) return 'Organization'
+  if (normalized.includes('parent') && normalized.includes('child')) {
+    return 'Parent: Child Business Units'
+  }
+  if (normalized.includes('business unit')) return 'Business Unit'
+  if (normalized.includes('user')) return 'User'
+  return 'None'
+}
+
+const scopeClassName = (scope: string) => {
+  const normalized = canonicalizeScopeLabel(scope).toLowerCase()
+  if (normalized === 'organization') return 'scope-org'
+  if (normalized === 'parent: child business units') return 'scope-parent-bu'
+  if (normalized === 'business unit') return 'scope-bu'
+  if (normalized === 'user') return 'scope-user'
+  return 'scope-none'
+}
+
+const renderPermissionFinderCellValue = (value: string, key: string) => {
+  const scope = canonicalizeScopeLabel(value)
+  return (
+    <div className="permission-scope-list">
+      <div key={key} className="permission-scope-line">
+        <span className={`permission-scope-badge ${scopeClassName(scope)}`}>{scope}</span>
+      </div>
+    </div>
+  )
+}
+
 function App() {
-  // License state
-  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null)
-  const [licenseModalOpen, setLicenseModalOpen] = useState(() => !getStoredLicenseKey())
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
-  const [licenseKeyInput, setLicenseKeyInput] = useState<string>(() => getStoredLicenseKey() || '')
-  const [licenseCheckLoading, setLicenseCheckLoading] = useState(false)
-  const [licenseCheckError, setLicenseCheckError] = useState<string | null>(null)
 
   // Theme and app state
   const [theme, setTheme] = useState<'earth' | 'night' | 'clean-slate'>(() => {
@@ -336,7 +461,7 @@ function App() {
   })
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState<
-    'users' | 'teams' | 'roles' | 'profiles' | 'actions'
+    'users' | 'teams' | 'roles' | 'profiles' | 'actions' | 'reports'
   >('users')
   const [userSearch, setUserSearch] = useState('')
   const [hideSystemUsers, setHideSystemUsers] = useState(true)
@@ -344,60 +469,6 @@ function App() {
     'enabled'
   )
   const [teamSearch, setTeamSearch] = useState('')
-
-  // On mount, check license
-  useEffect(() => {
-    console.log('License check starting...')
-    let isActive = true
-    setLicenseCheckLoading(true)
-    checkLicenseStatus().then((status) => {
-      console.log('License status received:', status)
-      if (isActive) setLicenseStatus(status)
-    }).catch((_e) => {
-      console.error('License check failed:', _e)
-      if (isActive) setLicenseStatus({
-        licensed: false,
-        validTo: '',
-        productId: '',
-        message: 'License check failed',
-      })
-    }).finally(() => {
-      if (isActive) setLicenseCheckLoading(false)
-    })
-    return () => { isActive = false }
-  }, [])
-
-  // Handler for license key update
-  const handleLicenseKeySave = async () => {
-    console.log('[App] handleLicenseKeySave called')
-    setLicenseCheckLoading(true)
-    setLicenseCheckError(null)
-    const key = licenseKeyInput.trim()
-    console.log('[App] Storing license key and forcing refresh...')
-    setStoredLicenseKey(key)
-    try {
-      console.log('[App] Calling checkLicenseStatus with key and forceRefresh=true...')
-      const status = await checkLicenseStatus(key, true)
-      console.log('[App] Received license status:', status)
-      setLicenseStatus(status)
-      if (status.licensed) {
-        console.log('[App] License is valid, closing modal')
-        setLicenseModalOpen(false)
-      } else {
-        console.log('[App] License is not valid, showing error:', status.message)
-        setLicenseCheckError(status.message || 'License verification failed')
-      }
-    } catch (e: any) {
-      console.error('[App] Error checking license:', e)
-      const errorMsg = e?.message || 'License check failed'
-      setLicenseCheckError(errorMsg)
-    } finally {
-      setLicenseCheckLoading(false)
-    }
-  }
-
-  // Block UI if not licensed
-  const showLicenseBlock = !licenseStatus?.licensed
 
   const [teamTypeFilter, setTeamTypeFilter] = useState<'all' | '0' | '1' | '2' | '3'>('all')
   const [roleSearch, setRoleSearch] = useState('')
@@ -497,6 +568,38 @@ function App() {
   const [manageUserResults, setManageUserResults] = useState<Systemusers[]>([])
   const [manageUserResultsLoading, setManageUserResultsLoading] = useState(false)
   const [manageUserResultsError, setManageUserResultsError] = useState<string | null>(null)
+
+  const [selectedReportType, setSelectedReportType] = useState<ReportType>('usersByRole')
+  const [reportParametersCollapsed, setReportParametersCollapsed] = useState(false)
+  const [hideEmptyReportColumns, setHideEmptyReportColumns] = useState(false)
+  const [selectedReportUserIds, setSelectedReportUserIds] = useState<string[]>([])
+  const [selectedReportRoleIds, setSelectedReportRoleIds] = useState<string[]>([])
+  const [selectedReportProfileIds, setSelectedReportProfileIds] = useState<string[]>([])
+  const [availableReportUserPickIds, setAvailableReportUserPickIds] = useState<string[]>([])
+  const [selectedReportUserPickIds, setSelectedReportUserPickIds] = useState<string[]>([])
+  const [availableReportRolePickIds, setAvailableReportRolePickIds] = useState<string[]>([])
+  const [selectedReportRolePickIds, setSelectedReportRolePickIds] = useState<string[]>([])
+  const [availableReportProfilePickIds, setAvailableReportProfilePickIds] = useState<string[]>([])
+  const [selectedReportProfilePickIds, setSelectedReportProfilePickIds] = useState<string[]>([])
+  const [selectedComparisonRoleIds, setSelectedComparisonRoleIds] = useState<string[]>([])
+  const [availableComparisonRolePickIds, setAvailableComparisonRolePickIds] = useState<string[]>([])
+  const [selectedComparisonRolePickIds, setSelectedComparisonRolePickIds] = useState<string[]>([])
+  const [permissionFinderTableOptions, setPermissionFinderTableOptions] = useState<string[]>([])
+  const [selectedPermissionFinderTableIds, setSelectedPermissionFinderTableIds] = useState<string[]>([])
+  const [availablePermissionFinderTablePickIds, setAvailablePermissionFinderTablePickIds] =
+    useState<string[]>([])
+  const [selectedPermissionFinderTablePickIds, setSelectedPermissionFinderTablePickIds] =
+    useState<string[]>([])
+  const [reportUserSearchTerm, setReportUserSearchTerm] = useState('')
+  const [reportRoleSearchTerm, setReportRoleSearchTerm] = useState('')
+  const [reportProfileSearchTerm, setReportProfileSearchTerm] = useState('')
+  const [comparisonRoleSearchTerm, setComparisonRoleSearchTerm] = useState('')
+  const [permissionFinderTableSearchTerm, setPermissionFinderTableSearchTerm] = useState('')
+  const [permissionFinderTablesLoading, setPermissionFinderTablesLoading] = useState(false)
+  const [permissionFinderTablesError, setPermissionFinderTablesError] = useState<string | null>(null)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
+  const [reportResult, setReportResult] = useState<ReportResult | null>(null)
 
   const selectedUser = useMemo(
     () => users.find((user) => user.systemuserid === selectedUserId) ?? null,
@@ -930,13 +1033,343 @@ function App() {
     })
   }, [profiles, profileSearch])
 
-  const handleTabChange = (tab: 'users' | 'teams' | 'roles' | 'profiles' | 'actions') => {
+  const reportUserOptions = useMemo(
+    () =>
+      [...users]
+        .filter((user) => !shouldHideSystemUser(user))
+        .filter(matchesUserStatusFilter)
+        .sort((a, b) =>
+          getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, {
+            sensitivity: 'base',
+          })
+        ),
+    [users, hideSystemUsers, userStatusFilter]
+  )
+
+  const reportRoleOptions = useMemo(
+    () =>
+      [...roles].sort((a, b) =>
+        (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+      ),
+    [roles]
+  )
+
+  const reportProfileOptions = useMemo(
+    () =>
+      [...profiles].sort((a, b) =>
+        (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+      ),
+    [profiles]
+  )
+
+  const filteredReportUserOptions = useMemo(() => {
+    const term = normalizeSearchValue(reportUserSearchTerm)
+    if (!term) return reportUserOptions
+    return reportUserOptions.filter((user) =>
+      [getUserDisplayName(user), user.internalemailaddress ?? '', user.systemuserid]
+        .join(' ')
+        .toLowerCase()
+        .includes(term)
+    )
+  }, [reportUserOptions, reportUserSearchTerm])
+
+  const filteredReportRoleOptions = useMemo(() => {
+    const term = normalizeSearchValue(reportRoleSearchTerm)
+    if (!term) return reportRoleOptions
+    return reportRoleOptions.filter((role) =>
+      [role.name ?? '', role.description ?? '', role.roleid].join(' ').toLowerCase().includes(term)
+    )
+  }, [reportRoleOptions, reportRoleSearchTerm])
+
+  const filteredReportProfileOptions = useMemo(() => {
+    const term = normalizeSearchValue(reportProfileSearchTerm)
+    if (!term) return reportProfileOptions
+    return reportProfileOptions.filter((profile) =>
+      [profile.name ?? '', profile.description ?? '', profile.fieldsecurityprofileid]
+        .join(' ')
+        .toLowerCase()
+        .includes(term)
+    )
+  }, [reportProfileOptions, reportProfileSearchTerm])
+
+  const filteredComparisonRoleOptions = useMemo(() => {
+    const term = normalizeSearchValue(comparisonRoleSearchTerm)
+    if (!term) return reportRoleOptions
+    return reportRoleOptions.filter((role) =>
+      [role.name ?? '', role.description ?? '', role.roleid].join(' ').toLowerCase().includes(term)
+    )
+  }, [reportRoleOptions, comparisonRoleSearchTerm])
+
+  const filteredPermissionFinderTableOptions = useMemo(() => {
+    const term = normalizeSearchValue(permissionFinderTableSearchTerm)
+    if (!term) return permissionFinderTableOptions
+    return permissionFinderTableOptions.filter((table) => table.toLowerCase().includes(term))
+  }, [permissionFinderTableOptions, permissionFinderTableSearchTerm])
+
+  const availableComparisonRoles = useMemo(
+    () =>
+      filteredComparisonRoleOptions.filter(
+        (role) => !selectedComparisonRoleIds.includes(role.roleid)
+      ),
+    [filteredComparisonRoleOptions, selectedComparisonRoleIds]
+  )
+
+  const selectedComparisonRoles = useMemo(
+    () =>
+      reportRoleOptions.filter((role) => selectedComparisonRoleIds.includes(role.roleid)),
+    [reportRoleOptions, selectedComparisonRoleIds]
+  )
+
+  const availablePermissionFinderTables = useMemo(
+    () =>
+      filteredPermissionFinderTableOptions.filter(
+        (table) => !selectedPermissionFinderTableIds.includes(table)
+      ),
+    [filteredPermissionFinderTableOptions, selectedPermissionFinderTableIds]
+  )
+
+  const selectedPermissionFinderTables = useMemo(
+    () =>
+      permissionFinderTableOptions.filter((table) => selectedPermissionFinderTableIds.includes(table)),
+    [permissionFinderTableOptions, selectedPermissionFinderTableIds]
+  )
+
+  useEffect(() => {
+    if (selectedReportType !== 'permissionFinder') return
+
+    let isActive = true
+    const loadTables = async () => {
+      setPermissionFinderTablesLoading(true)
+      setPermissionFinderTablesError(null)
+      try {
+        const links = (await fetchAllRolePrivilegeLinks()).filter(
+          (link) => Number(link.privilegedepthmask ?? 0) > 0
+        )
+        const privilegeIds = uniqueById(links.map((link) => ({ id: link.privilegeid }))).map(
+          (item) => item.id
+        )
+        const privileges = await fetchPrivilegesByIds(privilegeIds)
+
+        const tables = Array.from(
+          new Set(
+            privileges
+              .map((privilege) => parsePrivilegeActionAndTable(privilege.name ?? ''))
+              .filter(
+                (parsed): parsed is { action: (typeof ROLE_PERMISSION_ACTIONS)[number]; table: string } =>
+                  !!parsed && PERMISSION_FINDER_ACTION_SET.has(parsed.action)
+              )
+              .map((parsed) => parsed.table)
+          )
+        ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+        if (!isActive) return
+        setPermissionFinderTableOptions(tables)
+        setSelectedPermissionFinderTableIds((prev) => prev.filter((table) => tables.includes(table)))
+      } catch (error) {
+        if (!isActive) return
+        setPermissionFinderTablesError(describeError(error))
+        setPermissionFinderTableOptions([])
+      } finally {
+        if (isActive) {
+          setPermissionFinderTablesLoading(false)
+        }
+      }
+    }
+
+    loadTables()
+
+    return () => {
+      isActive = false
+    }
+  }, [selectedReportType])
+
+  const availableReportUsers = useMemo(
+    () =>
+      filteredReportUserOptions.filter(
+        (user) => !selectedReportUserIds.includes(user.systemuserid)
+      ),
+    [filteredReportUserOptions, selectedReportUserIds]
+  )
+
+  const selectedReportUsers = useMemo(
+    () => reportUserOptions.filter((user) => selectedReportUserIds.includes(user.systemuserid)),
+    [reportUserOptions, selectedReportUserIds]
+  )
+
+  const availableReportRoles = useMemo(
+    () =>
+      filteredReportRoleOptions.filter((role) => !selectedReportRoleIds.includes(role.roleid)),
+    [filteredReportRoleOptions, selectedReportRoleIds]
+  )
+
+  const selectedReportRoles = useMemo(
+    () => reportRoleOptions.filter((role) => selectedReportRoleIds.includes(role.roleid)),
+    [reportRoleOptions, selectedReportRoleIds]
+  )
+
+  const availableReportProfiles = useMemo(
+    () =>
+      filteredReportProfileOptions.filter(
+        (profile) => !selectedReportProfileIds.includes(profile.fieldsecurityprofileid)
+      ),
+    [filteredReportProfileOptions, selectedReportProfileIds]
+  )
+
+  const selectedReportProfiles = useMemo(
+    () =>
+      reportProfileOptions.filter((profile) =>
+        selectedReportProfileIds.includes(profile.fieldsecurityprofileid)
+      ),
+    [reportProfileOptions, selectedReportProfileIds]
+  )
+
+  const addReportUsers = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSelectedReportUserIds((prev) => uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id))
+    setAvailableReportUserPickIds([])
+    setReportResult(null)
+  }
+
+  const removeReportUsers = (ids: string[]) => {
+    if (ids.length === 0) return
+    const removeSet = new Set(ids)
+    setSelectedReportUserIds((prev) => prev.filter((id) => !removeSet.has(id)))
+    setSelectedReportUserPickIds([])
+    setReportResult(null)
+  }
+
+  const addReportRoles = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSelectedReportRoleIds((prev) => uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id))
+    setAvailableReportRolePickIds([])
+    setReportResult(null)
+  }
+
+  const removeReportRoles = (ids: string[]) => {
+    if (ids.length === 0) return
+    const removeSet = new Set(ids)
+    setSelectedReportRoleIds((prev) => prev.filter((id) => !removeSet.has(id)))
+    setSelectedReportRolePickIds([])
+    setReportResult(null)
+  }
+
+  const addReportProfiles = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSelectedReportProfileIds((prev) =>
+      uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id)
+    )
+    setAvailableReportProfilePickIds([])
+    setReportResult(null)
+  }
+
+  const removeReportProfiles = (ids: string[]) => {
+    if (ids.length === 0) return
+    const removeSet = new Set(ids)
+    setSelectedReportProfileIds((prev) => prev.filter((id) => !removeSet.has(id)))
+    setSelectedReportProfilePickIds([])
+    setReportResult(null)
+  }
+
+  const addComparisonRoles = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSelectedComparisonRoleIds((prev) =>
+      uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id)
+    )
+    setAvailableComparisonRolePickIds([])
+    setReportResult(null)
+  }
+
+  const removeComparisonRoles = (ids: string[]) => {
+    if (ids.length === 0) return
+    const removeSet = new Set(ids)
+    setSelectedComparisonRoleIds((prev) => prev.filter((id) => !removeSet.has(id)))
+    setSelectedComparisonRolePickIds([])
+    setReportResult(null)
+  }
+
+  const addPermissionFinderTables = (tables: string[]) => {
+    if (tables.length === 0) return
+    setSelectedPermissionFinderTableIds((prev) =>
+      uniqueById([...prev, ...tables].map((id) => ({ id }))).map((item) => item.id)
+    )
+    setAvailablePermissionFinderTablePickIds([])
+    setReportResult(null)
+  }
+
+  const removePermissionFinderTables = (tables: string[]) => {
+    if (tables.length === 0) return
+    const removeSet = new Set(tables)
+    setSelectedPermissionFinderTableIds((prev) => prev.filter((table) => !removeSet.has(table)))
+    setSelectedPermissionFinderTablePickIds([])
+    setReportResult(null)
+  }
+
+  const canRunReport = useMemo(() => {
+    if (selectedReportType === 'usersByRole') {
+      const usersOk = selectedReportUserIds.length > 0
+      const rolesOk = selectedReportRoleIds.length > 0
+      return usersOk && rolesOk
+    }
+
+    if (selectedReportType === 'usersByProfile') {
+      const usersOk = selectedReportUserIds.length > 0
+      const profilesOk = selectedReportProfileIds.length > 0
+      return usersOk && profilesOk
+    }
+
+    return selectedComparisonRoleIds.length > 0 && selectedPermissionFinderTableIds.length > 0
+  }, [
+    selectedReportType,
+    selectedReportUserIds,
+    selectedReportRoleIds,
+    selectedReportProfileIds,
+    selectedComparisonRoleIds,
+    selectedPermissionFinderTableIds,
+  ])
+
+  const reportSummary = useMemo(() => {
+    if (!reportResult) return null
+    if (reportResult.kind === 'matrix') {
+      const populatedCells = reportResult.rows.reduce(
+        (total, row) => total + row.cells.filter((cell) => cell !== '').length,
+        0
+      )
+      return {
+        rowCount: reportResult.rows.length,
+        columnCount: reportResult.columns.length,
+        dataPointCount: populatedCells,
+      }
+    }
+
+    const presentValues = reportResult.rows.reduce(
+      (total, row) =>
+        total +
+        row.values.reduce((valueTotal, value) => {
+          const grantedCount = value
+            .split('\n')
+            .map((entry) => entry.split(':').slice(1).join(':').trim().toLowerCase())
+            .filter((scope) => scope && scope !== 'none').length
+          return valueTotal + grantedCount
+        }, 0),
+      0
+    )
+    return {
+      rowCount: reportResult.rows.length,
+      columnCount: reportResult.compareColumns.length,
+      dataPointCount: presentValues,
+    }
+  }, [reportResult])
+
+  const handleTabChange = (
+    tab: 'users' | 'teams' | 'roles' | 'profiles' | 'actions' | 'reports'
+  ) => {
     setActiveTab(tab)
     setSelectedUserId(null)
     setSelectedTeamId(null)
     setSelectedRoleId(null)
     setSelectedProfileId(null)
     setSelectedActionId(null)
+    setReportError(null)
     setUserDetail(null)
     setTeamDetail(null)
     setRoleDetail(null)
@@ -1163,17 +1596,30 @@ function App() {
     }
   }
 
+  const downloadCsv = (fileName: string, header: string[], rows: Array<Array<string | number>>) => {
+    const toCsvValue = (value: string) => `"${value.replace(/"/g, '""')}"`
+    const csv = [header, ...rows]
+      .map((row) => row.map((value) => toCsvValue(String(value))).join(','))
+      .join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const exportActionsCsv = () => {
     if (actions.length === 0) return
 
-    const toCsvValue = (value: string) => `"${value.replace(/"/g, '""')}"`
-
     const rows = actions.map((action) => {
       const record = action as unknown as Record<string, unknown>
-      const principalType =
-        getFormattedValue(record, 'ope_principletype') || 'Unknown'
-      const relatedType =
-        getFormattedValue(record, 'ope_relatedtype') || 'Unknown'
+      const principalType = getFormattedValue(record, 'ope_principletype') || 'Unknown'
+      const relatedType = getFormattedValue(record, 'ope_relatedtype') || 'Unknown'
       return [
         formatDateTime(action.createdon),
         getActionOperationLabel(action),
@@ -1197,19 +1643,429 @@ function App() {
       'Error',
     ]
 
-    const csv = [header, ...rows]
-      .map((row) => row.map((value) => toCsvValue(String(value))).join(','))
-      .join('\n')
+    downloadCsv(`security-actions-${new Date().toISOString().slice(0, 10)}.csv`, header, rows)
+  }
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `security-actions-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+  const fetchAllSystemUserRoleLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Systemuserrolescollection[] = []
+    do {
+      const result = await SystemuserrolescollectionService.getAll({
+        select: ['systemuserid', 'roleid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(`Unable to load user-role assignments. ${describeError(result.error)}`)
+      }
+      collected.push(...(result.data as Systemuserrolescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllTeamMembershipLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Teammemberships[] = []
+    do {
+      const result = await TeammembershipsService.getAll({
+        select: ['teamid', 'systemuserid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(`Unable to load team memberships. ${describeError(result.error)}`)
+      }
+      collected.push(...(result.data as Teammemberships[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllTeamRoleLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Teamrolescollection[] = []
+    do {
+      const result = await TeamrolescollectionService.getAll({
+        select: ['teamid', 'roleid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(`Unable to load team-role assignments. ${describeError(result.error)}`)
+      }
+      collected.push(...(result.data as Teamrolescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllUserProfileLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Systemuserprofilescollection[] = []
+    do {
+      const result = await SystemuserprofilescollectionService.getAll({
+        select: ['systemuserid', 'fieldsecurityprofileid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(
+          `Unable to load user profile assignments. ${describeError(result.error)}`
+        )
+      }
+      collected.push(...(result.data as Systemuserprofilescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllTeamProfileLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Teamprofilescollection[] = []
+    do {
+      const result = await TeamprofilescollectionService.getAll({
+        select: ['teamid', 'fieldsecurityprofileid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(
+          `Unable to load team profile assignments. ${describeError(result.error)}`
+        )
+      }
+      collected.push(...(result.data as Teamprofilescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllRolePrivilegeLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Roleprivilegescollection[] = []
+    do {
+      const result = await RoleprivilegescollectionService.getAll({
+        select: ['roleid', 'privilegeid', 'privilegedepthmask'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(`Unable to load role privileges. ${describeError(result.error)}`)
+      }
+      collected.push(...(result.data as Roleprivilegescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const buildMatrixStatus = (isDirect: boolean, isInherited: boolean): MatrixCellStatus => {
+    if (isDirect && isInherited) return 'Both'
+    if (isDirect) return 'Direct'
+    if (isInherited) return 'Inherited'
+    return ''
+  }
+
+  const runUsersByRoleReport = async () => {
+    const [selectedUsers, selectedRoles, userRoleLinks, teamMembershipLinks, teamRoleLinks] =
+      await Promise.all([
+        fetchUsersByIds(selectedReportUserIds),
+        fetchRolesByIds(selectedReportRoleIds),
+        fetchAllSystemUserRoleLinks(),
+        fetchAllTeamMembershipLinks(),
+        fetchAllTeamRoleLinks(),
+      ])
+
+    const users = selectedUsers
+      .filter((user) => !shouldHideSystemUser(user))
+      .filter(matchesUserStatusFilter)
+      .sort((a, b) => getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, { sensitivity: 'base' }))
+    const roles = [...selectedRoles].sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+    )
+
+    const userIdSet = new Set(users.map((user) => user.systemuserid))
+    const roleIdSet = new Set(roles.map((role) => role.roleid))
+
+    const directAssignments = new Set(
+      userRoleLinks
+        .filter((link) => userIdSet.has(link.systemuserid) && roleIdSet.has(link.roleid))
+        .map((link) => `${link.systemuserid}|${link.roleid}`)
+    )
+
+    const teamIdsByUser = new Map<string, Set<string>>()
+    teamMembershipLinks.forEach((link) => {
+      if (!userIdSet.has(link.systemuserid)) return
+      if (!teamIdsByUser.has(link.systemuserid)) {
+        teamIdsByUser.set(link.systemuserid, new Set<string>())
+      }
+      teamIdsByUser.get(link.systemuserid)?.add(link.teamid)
+    })
+
+    const roleIdsByTeam = new Map<string, Set<string>>()
+    teamRoleLinks.forEach((link) => {
+      if (!roleIdSet.has(link.roleid)) return
+      if (!roleIdsByTeam.has(link.teamid)) {
+        roleIdsByTeam.set(link.teamid, new Set<string>())
+      }
+      roleIdsByTeam.get(link.teamid)?.add(link.roleid)
+    })
+
+    const columns = roles.map((role) => ({ id: role.roleid, label: role.name ?? 'Unnamed role' }))
+    const rows: MatrixReportRow[] = users.map((user) => {
+      const userTeams = teamIdsByUser.get(user.systemuserid) ?? new Set<string>()
+      const matrixCells = columns.map((column) => {
+        const direct = directAssignments.has(`${user.systemuserid}|${column.id}`)
+        let inherited = false
+        userTeams.forEach((teamId) => {
+          if (roleIdsByTeam.get(teamId)?.has(column.id)) {
+            inherited = true
+          }
+        })
+        return buildMatrixStatus(direct, inherited)
+      })
+
+      return {
+        id: user.systemuserid,
+        label: getUserDisplayName(user),
+        cells: matrixCells,
+      }
+    })
+
+    let finalColumns = columns
+    let finalRows = rows
+
+    if (hideEmptyReportColumns) {
+      const visibleColumnIndexes = columns
+        .map((_, index) => index)
+        .filter((index) => rows.some((row) => row.cells[index] !== ''))
+
+      finalColumns = visibleColumnIndexes.map((index) => columns[index])
+      finalRows = rows.map((row) => ({
+        ...row,
+        cells: visibleColumnIndexes.map((index) => row.cells[index]),
+      }))
+    }
+
+    const csvHeader = ['User', ...finalColumns.map((column) => column.label)]
+    const csvRows = finalRows.map((row) => [row.label, ...row.cells])
+
+    setReportResult({
+      kind: 'matrix',
+      title: 'Users by Security Role',
+      rowLabel: 'User',
+      columnLabel: 'Security Role',
+      columns: finalColumns,
+      rows: finalRows,
+      csvFileName: `users-by-security-role-${new Date().toISOString().slice(0, 10)}.csv`,
+      csvHeader,
+      csvRows,
+    })
+  }
+
+  const runUsersByProfileReport = async () => {
+    const [selectedUsers, selectedProfiles, userProfileLinks, teamMembershipLinks, teamProfileLinks] =
+      await Promise.all([
+        fetchUsersByIds(selectedReportUserIds),
+        fetchProfilesByIds(selectedReportProfileIds),
+        fetchAllUserProfileLinks(),
+        fetchAllTeamMembershipLinks(),
+        fetchAllTeamProfileLinks(),
+      ])
+
+    const users = selectedUsers
+      .filter((user) => !shouldHideSystemUser(user))
+      .filter(matchesUserStatusFilter)
+      .sort((a, b) => getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, { sensitivity: 'base' }))
+    const profiles = [...selectedProfiles].sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+    )
+
+    const userIdSet = new Set(users.map((user) => user.systemuserid))
+    const profileIdSet = new Set(profiles.map((profile) => profile.fieldsecurityprofileid))
+
+    const directAssignments = new Set(
+      userProfileLinks
+        .filter(
+          (link) => userIdSet.has(link.systemuserid) && profileIdSet.has(link.fieldsecurityprofileid)
+        )
+        .map((link) => `${link.systemuserid}|${link.fieldsecurityprofileid}`)
+    )
+
+    const teamIdsByUser = new Map<string, Set<string>>()
+    teamMembershipLinks.forEach((link) => {
+      if (!userIdSet.has(link.systemuserid)) return
+      if (!teamIdsByUser.has(link.systemuserid)) {
+        teamIdsByUser.set(link.systemuserid, new Set<string>())
+      }
+      teamIdsByUser.get(link.systemuserid)?.add(link.teamid)
+    })
+
+    const profileIdsByTeam = new Map<string, Set<string>>()
+    teamProfileLinks.forEach((link) => {
+      if (!profileIdSet.has(link.fieldsecurityprofileid)) return
+      if (!profileIdsByTeam.has(link.teamid)) {
+        profileIdsByTeam.set(link.teamid, new Set<string>())
+      }
+      profileIdsByTeam.get(link.teamid)?.add(link.fieldsecurityprofileid)
+    })
+
+    const columns = profiles.map((profile) => ({
+      id: profile.fieldsecurityprofileid,
+      label: profile.name ?? 'Unnamed profile',
+    }))
+    const rows: MatrixReportRow[] = users.map((user) => {
+      const userTeams = teamIdsByUser.get(user.systemuserid) ?? new Set<string>()
+      const matrixCells = columns.map((column) => {
+        const direct = directAssignments.has(`${user.systemuserid}|${column.id}`)
+        let inherited = false
+        userTeams.forEach((teamId) => {
+          if (profileIdsByTeam.get(teamId)?.has(column.id)) {
+            inherited = true
+          }
+        })
+        return buildMatrixStatus(direct, inherited)
+      })
+
+      return {
+        id: user.systemuserid,
+        label: getUserDisplayName(user),
+        cells: matrixCells,
+      }
+    })
+
+    let finalColumns = columns
+    let finalRows = rows
+
+    if (hideEmptyReportColumns) {
+      const visibleColumnIndexes = columns
+        .map((_, index) => index)
+        .filter((index) => rows.some((row) => row.cells[index] !== ''))
+
+      finalColumns = visibleColumnIndexes.map((index) => columns[index])
+      finalRows = rows.map((row) => ({
+        ...row,
+        cells: visibleColumnIndexes.map((index) => row.cells[index]),
+      }))
+    }
+
+    const csvHeader = ['User', ...finalColumns.map((column) => column.label)]
+    const csvRows = finalRows.map((row) => [row.label, ...row.cells])
+
+    setReportResult({
+      kind: 'matrix',
+      title: 'Users by Field Security Profile',
+      rowLabel: 'User',
+      columnLabel: 'Field Security Profile',
+      columns: finalColumns,
+      rows: finalRows,
+      csvFileName: `users-by-field-security-profile-${new Date().toISOString().slice(0, 10)}.csv`,
+      csvHeader,
+      csvRows,
+    })
+  }
+
+  const runPermissionFinderReport = async () => {
+    const rolesToCompare = await fetchRolesByIds(selectedComparisonRoleIds)
+    const roles = [...rolesToCompare].sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+    )
+
+    const roleIdSet = new Set(roles.map((role) => role.roleid))
+    const links = (await fetchAllRolePrivilegeLinks()).filter(
+      (link) => roleIdSet.has(link.roleid) && Number(link.privilegedepthmask ?? 0) > 0
+    )
+
+    const privilegeIds = uniqueById(links.map((link) => ({ id: link.privilegeid }))).map(
+      (item) => item.id
+    )
+    const privileges = await fetchPrivilegesByIds(privilegeIds)
+    const privilegeNameById = new Map(
+      privileges.map((privilege) => [privilege.privilegeid, privilege.name ?? ''])
+    )
+
+    const columns = roles.map((role) => ({ id: role.roleid, label: role.name ?? 'Unnamed role' }))
+    const roleTablePermissions = new Map<
+      string,
+      Map<string, Map<(typeof ROLE_PERMISSION_ACTIONS)[number], string>>
+    >()
+
+    links.forEach((link) => {
+      const privilegeName = privilegeNameById.get(link.privilegeid)
+      const parsed = parsePrivilegeActionAndTable(privilegeName)
+      if (!parsed || !PERMISSION_FINDER_ACTION_SET.has(parsed.action)) return
+
+      if (!roleTablePermissions.has(link.roleid)) {
+        roleTablePermissions.set(link.roleid, new Map())
+      }
+
+      const tableMap = roleTablePermissions.get(link.roleid)!
+      if (!tableMap.has(parsed.table)) {
+        tableMap.set(parsed.table, new Map())
+      }
+
+      const actionMap = tableMap.get(parsed.table)!
+      const current = actionMap.get(parsed.action)
+      const currentRank = roleDepthRank(current)
+      const nextRank = roleDepthRank(link.privilegedepthmask)
+      if (nextRank >= currentRank) {
+        actionMap.set(parsed.action, roleDepthLabel(link.privilegedepthmask))
+      }
+    })
+
+    const selectedTables = [...selectedPermissionFinderTableIds].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' })
+    )
+
+    const rows = selectedTables.flatMap((table) =>
+      PERMISSION_FINDER_ACTIONS.map((action) => ({
+        key: `${table}|${action}`,
+        itemName: table,
+        detail: rolePermissionLabel(action),
+        values: columns.map((column) => {
+          const actionMap = roleTablePermissions.get(column.id)?.get(table)
+          return actionMap?.get(action) ?? 'None'
+        }),
+      }))
+    )
+
+    const csvHeader = ['Table', 'Permissions', ...columns.map((column) => column.label)]
+    const csvRows = rows.map((row) => [row.itemName, row.detail, ...row.values])
+
+    setReportResult({
+      kind: 'comparison',
+      title: 'Permission Finder',
+      itemLabel: 'Table',
+      compareColumns: columns,
+      rows,
+      csvFileName: `permission-finder-${new Date().toISOString().slice(0, 10)}.csv`,
+      csvHeader,
+      csvRows,
+    })
+  }
+
+  const runSelectedReport = async () => {
+    setReportLoading(true)
+    setReportError(null)
+    setReportResult(null)
+    try {
+      if (selectedReportType === 'usersByRole') {
+        await runUsersByRoleReport()
+      } else if (selectedReportType === 'usersByProfile') {
+        await runUsersByProfileReport()
+      } else {
+        await runPermissionFinderReport()
+      }
+    } catch (error) {
+      console.error('[Reports] Run failed', error)
+      setReportError(describeError(error))
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  const exportCurrentReportCsv = () => {
+    if (!reportResult) return
+    downloadCsv(reportResult.csvFileName, reportResult.csvHeader, reportResult.csvRows)
   }
 
   const fetchRolesByIds = async (ids: string[]) => {
@@ -2021,6 +2877,7 @@ function App() {
     roles: 'Review assignments for users and teams, including inherited memberships.',
     profiles: 'Inspect field permissions and profile memberships.',
     actions: 'Track association requests, status, and error details.',
+    reports: 'Run security reporting views and export results in CSV for Excel.',
   }
 
   const tabTitles: Record<typeof activeTab, string> = {
@@ -2029,6 +2886,7 @@ function App() {
     roles: 'Security Roles',
     profiles: 'Field Security Profiles',
     actions: 'Security Actions',
+    reports: 'Reports',
   }
 
   const gridConfig = {
@@ -2079,6 +2937,10 @@ function App() {
         { key: 'status', label: 'Status' },
       ],
       template: '1fr 1.2fr 0.9fr 1.2fr 1fr 0.8fr 140px',
+    },
+    reports: {
+      columns: [{ key: 'reporting', label: 'Reporting' }],
+      template: '1fr',
     },
   } as const
 
@@ -2135,187 +2997,6 @@ function App() {
 
   return (
     <div className={`app-shell theme-${theme}`}>
-      {/* Show license block as overlay if not licensed */}
-      {showLicenseBlock && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          background: '#fff',
-          zIndex: 9999,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontFamily: 'sans-serif',
-        }}>
-          <div style={{ textAlign: 'center', maxWidth: '500px', padding: '20px' }}>
-            <h2>License Information</h2>
-            
-            {/* License Status Box */}
-            <div style={{ marginBottom: '24px', padding: '16px', background: '#f9f9f9', border: '1px solid #ddd', borderRadius: '6px', textAlign: 'left' }}>
-              <div style={{ marginBottom: '12px' }}>
-                <strong style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Status</strong>
-                <div style={{ fontSize: '16px', color: licenseStatus?.licensed ? '#080' : '#b00', fontWeight: 600 }}>
-                  {licenseStatus?.licensed ? '✓ Licensed' : '✗ Not Licensed'}
-                </div>
-              </div>
-              
-              {licenseStatus?.validTo && (
-                <div style={{ marginBottom: '12px' }}>
-                  <strong style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Valid Until</strong>
-                  <div style={{ fontSize: '14px' }}>{licenseStatus.validTo}</div>
-                </div>
-              )}
-              
-              {licenseStatus?.productId && (
-                <div style={{ marginBottom: '12px' }}>
-                  <strong style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Product</strong>
-                  <div style={{ fontSize: '14px' }}>{licenseStatus.productId}</div>
-                </div>
-              )}
-              
-              {getStoredLicenseKey() && (
-                <div>
-                  <strong style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>License Key</strong>
-                  <div style={{ fontSize: '13px', fontFamily: 'monospace', padding: '8px', background: '#fff', border: '1px solid #ddd', borderRadius: '4px', wordBreak: 'break-all', marginTop: '4px' }}>
-                    {getStoredLicenseKey()}
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            {licenseStatus?.message && !licenseStatus.licensed && (
-              <p style={{ color: '#b00', fontWeight: 600, marginBottom: '20px' }}>{licenseStatus.message}</p>
-            )}
-            
-            <button 
-              onClick={() => setLicenseModalOpen(true)} 
-              style={{ padding: '10px 20px', marginTop: '20px', fontSize: '16px', cursor: 'pointer', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px' }}
-            >
-              Update License Key
-            </button>
-          </div>
-
-          {/* License key update modal */}
-          {licenseModalOpen && (
-            <div style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              background: 'rgba(0,0,0,0.5)',
-              zIndex: 10000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <div style={{ background: '#fff', padding: '32px', borderRadius: '8px', minWidth: '420px', maxWidth: '500px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
-                <h3 style={{ marginTop: 0, marginBottom: '16px' }}>Update License Key</h3>
-                
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '14px' }}>
-                  Enter your license key:
-                </label>
-                <input
-                  type="text"
-                  value={licenseKeyInput}
-                  onChange={e => setLicenseKeyInput(e.target.value)}
-                  style={{ 
-                    width: '100%', 
-                    padding: '10px', 
-                    marginBottom: '16px', 
-                    boxSizing: 'border-box', 
-                    border: '1px solid #ddd', 
-                    borderRadius: '4px',
-                    fontFamily: 'monospace',
-                    fontSize: '13px'
-                  }}
-                  disabled={licenseCheckLoading}
-                  placeholder="Paste your license key here"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !licenseCheckLoading && licenseKeyInput.trim()) {
-                      handleLicenseKeySave()
-                    }
-                  }}
-                  autoFocus
-                />
-                
-                {/* Status message area */}
-                {licenseCheckError && (
-                  <div style={{ marginBottom: '16px', padding: '12px', background: '#fee', border: '1px solid #fcc', borderRadius: '4px', color: '#b00', fontSize: '14px' }}>
-                    <strong>Error:</strong> {licenseCheckError}
-                  </div>
-                )}
-                
-                {licenseCheckLoading && (
-                  <div style={{ marginBottom: '16px', padding: '12px', textAlign: 'center', color: '#666', fontSize: '14px' }}>
-                    <div style={{ marginBottom: '8px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        width: '16px',
-                        height: '16px',
-                        border: '3px solid #f3f3f3',
-                        borderTop: '3px solid #007bff',
-                        borderRadius: '50%',
-                        animation: 'spin 1s linear infinite',
-                      }} />
-                    </div>
-                    Verifying license with Azure...
-                  </div>
-                )}
-                
-                {/* Buttons */}
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                  <button 
-                    onClick={() => {
-                      setLicenseModalOpen(false)
-                      setLicenseCheckError(null)
-                    }}
-                    disabled={licenseCheckLoading} 
-                    style={{ 
-                      padding: '10px 20px', 
-                      background: '#6c757d', 
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: licenseCheckLoading ? 'not-allowed' : 'pointer',
-                      opacity: licenseCheckLoading ? 0.6 : 1,
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={handleLicenseKeySave} 
-                    disabled={licenseCheckLoading || !licenseKeyInput.trim()} 
-                    style={{ 
-                      padding: '10px 20px', 
-                      background: '#28a745',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: licenseCheckLoading || !licenseKeyInput.trim() ? 'not-allowed' : 'pointer',
-                      opacity: licenseCheckLoading || !licenseKeyInput.trim() ? 0.6 : 1,
-                    }}
-                  >
-                    {licenseCheckLoading ? 'Verifying...' : 'Verify'}
-                  </button>
-                </div>
-              </div>
-              
-              {/* Add CSS animation for spinner */}
-              <style>{`
-                @keyframes spin {
-                  0% { transform: rotate(0deg); }
-                  100% { transform: rotate(360deg); }
-                }
-              `}</style>
-            </div>
-          )}
-        </div>
-      )}
       <aside className={`side-nav ${navCollapsed ? 'is-collapsed' : ''}`}>
         <div className="side-nav-header">
           <button
@@ -2419,6 +3100,24 @@ function App() {
               <span className="tab-meta">Review requests and completion status.</span>
             </span>
           </button>
+          <button
+            className={`tab-button ${activeTab === 'reports' ? 'is-active' : ''}`}
+            onClick={() => handleTabChange('reports')}
+            title="Reports"
+          >
+            <span className="tab-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" role="presentation">
+                <path d="M4 5h16v14H4z" />
+                <path d="M8 15V9" />
+                <path d="M12 15v-4" />
+                <path d="M16 15v-2" />
+              </svg>
+            </span>
+            <span className="tab-text">
+              <span className="tab-title">Reports</span>
+              <span className="tab-meta">Run matrix/comparison reports and export CSV.</span>
+            </span>
+          </button>
         </div>
         <div className={`theme-switcher ${navCollapsed ? 'is-collapsed' : ''}`}>
           <p className="theme-label">Theme</p>
@@ -2446,9 +3145,9 @@ function App() {
               width: navCollapsed ? 'auto' : '100%',
               fontSize: '14px',
             }}
-            title="Open settings"
+            title="Open about"
           >
-            {navCollapsed ? '⚙' : 'Settings'}
+            {navCollapsed ? 'ⓘ' : 'About'}
           </button>
         </div>
       </aside>
@@ -2662,10 +3361,787 @@ function App() {
                     </button>
                   </>
                 )}
+                {activeTab === 'reports' && (
+                  <>
+                    <button
+                      className="ghost-button"
+                      onClick={() => {
+                        setReportResult(null)
+                        setReportError(null)
+                        setReportUserSearchTerm('')
+                        setReportRoleSearchTerm('')
+                        setReportProfileSearchTerm('')
+                        setComparisonRoleSearchTerm('')
+                        setPermissionFinderTableSearchTerm('')
+                        setAvailableReportUserPickIds([])
+                        setSelectedReportUserPickIds([])
+                        setAvailableReportRolePickIds([])
+                        setSelectedReportRolePickIds([])
+                        setAvailableReportProfilePickIds([])
+                        setSelectedReportProfilePickIds([])
+                        setAvailableComparisonRolePickIds([])
+                        setSelectedComparisonRolePickIds([])
+                        setAvailablePermissionFinderTablePickIds([])
+                        setSelectedPermissionFinderTablePickIds([])
+                      }}
+                      disabled={reportLoading}
+                    >
+                      Clear
+                    </button>
+                    <button className="ghost-button" onClick={runSelectedReport} disabled={reportLoading || !canRunReport}>
+                      {reportLoading ? 'Running...' : 'Run Report'}
+                    </button>
+                    <button
+                      className="ghost-button"
+                      onClick={exportCurrentReportCsv}
+                      disabled={!reportResult || reportLoading}
+                    >
+                      Export CSV
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
-          <div className="grid-table">
+          {activeTab === 'reports' ? (
+            <div className="reports-workspace">
+              <div className="reports-card-grid">
+                <button
+                  className={`report-card ${selectedReportType === 'usersByRole' ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setSelectedReportType('usersByRole')
+                    setReportResult(null)
+                    setReportError(null)
+                    setReportRoleSearchTerm('')
+                  }}
+                  type="button"
+                >
+                  <h3>Users by Security Role</h3>
+                  <p>Rows are users and columns are roles. Cells show Direct, Inherited, or Both.</p>
+                </button>
+                <button
+                  className={`report-card ${selectedReportType === 'usersByProfile' ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setSelectedReportType('usersByProfile')
+                    setReportResult(null)
+                    setReportError(null)
+                    setReportProfileSearchTerm('')
+                  }}
+                  type="button"
+                >
+                  <h3>Users by Field Security Profile</h3>
+                  <p>Rows are users and columns are profiles. Cells show Direct, Inherited, or Both.</p>
+                </button>
+                <button
+                  className={`report-card ${selectedReportType === 'permissionFinder' ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setSelectedReportType('permissionFinder')
+                    setReportResult(null)
+                    setReportError(null)
+                    setComparisonRoleSearchTerm('')
+                    setPermissionFinderTableSearchTerm('')
+                  }}
+                  type="button"
+                >
+                  <h3>Permission Finder</h3>
+                  <p>Choose tables and roles to view Create/Read/Write permission scope by role.</p>
+                </button>
+              </div>
+
+              {selectedReportType !== 'permissionFinder' && (
+                <div className="report-parameter-panel">
+                  <div className="report-parameter-header">
+                    <h4>Parameters</h4>
+                    <button
+                      type="button"
+                      className="ghost-button small"
+                      onClick={() => setReportParametersCollapsed((prev) => !prev)}
+                    >
+                      {reportParametersCollapsed ? 'Expand' : 'Collapse'}
+                    </button>
+                  </div>
+
+                  {!reportParametersCollapsed && (
+                    <>
+                      <div className="report-parameter-row">
+                        <label className="toggle">
+                          <input
+                            type="checkbox"
+                            checked={hideEmptyReportColumns}
+                            onChange={(event) => {
+                              setHideEmptyReportColumns(event.target.checked)
+                              setReportResult(null)
+                            }}
+                          />
+                          <span>Hide roles/profiles with no users in results</span>
+                        </label>
+                      </div>
+
+                      <div className="report-parameter-row">
+                        <span className="report-list-label">Users</span>
+                        <div className="report-dual-list">
+                        <div className="report-multi-select-wrap">
+                          <label className="report-list-label">Available</label>
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search users"
+                            value={reportUserSearchTerm}
+                            onChange={(event) => setReportUserSearchTerm(event.target.value)}
+                          />
+                          <div className="report-selection-meta">
+                            <span>{availableReportUsers.length} shown</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-button small"
+                            onClick={() => addReportUsers(availableReportUsers.map((user) => user.systemuserid))}
+                            disabled={availableReportUsers.length === 0}
+                          >
+                            Add All
+                          </button>
+                          <select
+                            className="report-multi-select"
+                            multiple
+                            value={availableReportUserPickIds}
+                            onChange={(event) => {
+                              setAvailableReportUserPickIds(
+                                Array.from(event.target.selectedOptions).map((option) => option.value)
+                              )
+                            }}
+                            onDoubleClick={(event) => {
+                              const value = (event.target as HTMLOptionElement).value
+                              if (value) addReportUsers([value])
+                            }}
+                          >
+                            {availableReportUsers.map((user) => (
+                              <option key={user.systemuserid} value={user.systemuserid}>
+                                {getUserDisplayName(user)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="report-dual-actions">
+                          <button
+                            type="button"
+                            className="ghost-button small"
+                            onClick={() => addReportUsers(availableReportUserPickIds)}
+                            disabled={availableReportUserPickIds.length === 0}
+                          >
+                            Choose →
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button small"
+                            onClick={() => removeReportUsers(selectedReportUserPickIds)}
+                            disabled={selectedReportUserPickIds.length === 0}
+                          >
+                            ← Remove
+                          </button>
+                        </div>
+                        <div className="report-multi-select-wrap">
+                          <label className="report-list-label">Selected</label>
+                          <div className="report-selection-meta">
+                            <span>{selectedReportUserIds.length} selected</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-button small"
+                            onClick={() => removeReportUsers(selectedReportUserIds)}
+                            disabled={selectedReportUserIds.length === 0}
+                          >
+                            Remove All
+                          </button>
+                          <select
+                            className="report-multi-select"
+                            multiple
+                            value={selectedReportUserPickIds}
+                            onChange={(event) => {
+                              setSelectedReportUserPickIds(
+                                Array.from(event.target.selectedOptions).map((option) => option.value)
+                              )
+                            }}
+                            onDoubleClick={(event) => {
+                              const value = (event.target as HTMLOptionElement).value
+                              if (value) removeReportUsers([value])
+                            }}
+                          >
+                            {selectedReportUsers.map((user) => (
+                              <option key={user.systemuserid} value={user.systemuserid}>
+                                {getUserDisplayName(user)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        </div>
+                      </div>
+
+                      {selectedReportType === 'usersByRole' && (
+                        <div className="report-parameter-row">
+                          <span className="report-list-label">Security Roles</span>
+                          <div className="report-dual-list">
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Available</label>
+                            <input
+                              className="filter-input"
+                              type="search"
+                              placeholder="Search roles"
+                              value={reportRoleSearchTerm}
+                              onChange={(event) => setReportRoleSearchTerm(event.target.value)}
+                            />
+                            <div className="report-selection-meta">
+                              <span>{availableReportRoles.length} shown</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addReportRoles(availableReportRoles.map((role) => role.roleid))}
+                              disabled={availableReportRoles.length === 0}
+                            >
+                              Add All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={availableReportRolePickIds}
+                              onChange={(event) => {
+                                setAvailableReportRolePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) addReportRoles([value])
+                              }}
+                            >
+                              {availableReportRoles.map((role) => (
+                                <option key={role.roleid} value={role.roleid}>
+                                  {role.name ?? 'Unnamed role'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="report-dual-actions">
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addReportRoles(availableReportRolePickIds)}
+                              disabled={availableReportRolePickIds.length === 0}
+                            >
+                              Choose →
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeReportRoles(selectedReportRolePickIds)}
+                              disabled={selectedReportRolePickIds.length === 0}
+                            >
+                              ← Remove
+                            </button>
+                          </div>
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Selected</label>
+                            <div className="report-selection-meta">
+                              <span>{selectedReportRoleIds.length} selected</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeReportRoles(selectedReportRoleIds)}
+                              disabled={selectedReportRoleIds.length === 0}
+                            >
+                              Remove All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={selectedReportRolePickIds}
+                              onChange={(event) => {
+                                setSelectedReportRolePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) removeReportRoles([value])
+                              }}
+                            >
+                              {selectedReportRoles.map((role) => (
+                                <option key={role.roleid} value={role.roleid}>
+                                  {role.name ?? 'Unnamed role'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedReportType === 'usersByProfile' && (
+                        <div className="report-parameter-row">
+                          <span className="report-list-label">Field Security Profiles</span>
+                          <div className="report-dual-list">
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Available</label>
+                            <input
+                              className="filter-input"
+                              type="search"
+                              placeholder="Search profiles"
+                              value={reportProfileSearchTerm}
+                              onChange={(event) => setReportProfileSearchTerm(event.target.value)}
+                            />
+                            <div className="report-selection-meta">
+                              <span>{availableReportProfiles.length} shown</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() =>
+                                addReportProfiles(
+                                  availableReportProfiles.map(
+                                    (profile) => profile.fieldsecurityprofileid
+                                  )
+                                )
+                              }
+                              disabled={availableReportProfiles.length === 0}
+                            >
+                              Add All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={availableReportProfilePickIds}
+                              onChange={(event) => {
+                                setAvailableReportProfilePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) addReportProfiles([value])
+                              }}
+                            >
+                              {availableReportProfiles.map((profile) => (
+                                <option
+                                  key={profile.fieldsecurityprofileid}
+                                  value={profile.fieldsecurityprofileid}
+                                >
+                                  {profile.name ?? 'Unnamed profile'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="report-dual-actions">
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addReportProfiles(availableReportProfilePickIds)}
+                              disabled={availableReportProfilePickIds.length === 0}
+                            >
+                              Choose →
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeReportProfiles(selectedReportProfilePickIds)}
+                              disabled={selectedReportProfilePickIds.length === 0}
+                            >
+                              ← Remove
+                            </button>
+                          </div>
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Selected</label>
+                            <div className="report-selection-meta">
+                              <span>{selectedReportProfileIds.length} selected</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeReportProfiles(selectedReportProfileIds)}
+                              disabled={selectedReportProfileIds.length === 0}
+                            >
+                              Remove All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={selectedReportProfilePickIds}
+                              onChange={(event) => {
+                                setSelectedReportProfilePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) removeReportProfiles([value])
+                              }}
+                            >
+                              {selectedReportProfiles.map((profile) => (
+                                <option
+                                  key={profile.fieldsecurityprofileid}
+                                  value={profile.fieldsecurityprofileid}
+                                >
+                                  {profile.name ?? 'Unnamed profile'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {selectedReportType === 'permissionFinder' && (
+                <div className="report-parameter-panel">
+                  <div className="report-parameter-header">
+                    <h4>Parameters</h4>
+                    <button
+                      type="button"
+                      className="ghost-button small"
+                      onClick={() => setReportParametersCollapsed((prev) => !prev)}
+                    >
+                      {reportParametersCollapsed ? 'Expand' : 'Collapse'}
+                    </button>
+                  </div>
+
+                  {!reportParametersCollapsed && (
+                    <>
+                      <div className="report-parameter-row">
+                        <span className="report-list-label">Security Roles</span>
+                        <div className="report-dual-list">
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Available</label>
+                            <input
+                              className="filter-input"
+                              type="search"
+                              placeholder="Search roles"
+                              value={comparisonRoleSearchTerm}
+                              onChange={(event) => setComparisonRoleSearchTerm(event.target.value)}
+                            />
+                            <div className="report-selection-meta">
+                              <span>{availableComparisonRoles.length} shown</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() =>
+                                addComparisonRoles(availableComparisonRoles.map((role) => role.roleid))
+                              }
+                              disabled={availableComparisonRoles.length === 0}
+                            >
+                              Add All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={availableComparisonRolePickIds}
+                              onChange={(event) => {
+                                setAvailableComparisonRolePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) addComparisonRoles([value])
+                              }}
+                            >
+                              {availableComparisonRoles.map((role) => (
+                                <option key={role.roleid} value={role.roleid}>
+                                  {role.name ?? 'Unnamed role'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="report-dual-actions">
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addComparisonRoles(availableComparisonRolePickIds)}
+                              disabled={availableComparisonRolePickIds.length === 0}
+                            >
+                              Choose →
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeComparisonRoles(selectedComparisonRolePickIds)}
+                              disabled={selectedComparisonRolePickIds.length === 0}
+                            >
+                              ← Remove
+                            </button>
+                          </div>
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Selected</label>
+                            <div className="report-selection-meta">
+                              <span>{selectedComparisonRoleIds.length} selected</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeComparisonRoles(selectedComparisonRoleIds)}
+                              disabled={selectedComparisonRoleIds.length === 0}
+                            >
+                              Remove All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={selectedComparisonRolePickIds}
+                              onChange={(event) => {
+                                setSelectedComparisonRolePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) removeComparisonRoles([value])
+                              }}
+                            >
+                              {selectedComparisonRoles.map((role) => (
+                                <option key={role.roleid} value={role.roleid}>
+                                  {role.name ?? 'Unnamed role'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="report-parameter-row">
+                        <span className="report-list-label">Tables</span>
+                        <div className="report-dual-list">
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Available</label>
+                            <input
+                              className="filter-input"
+                              type="search"
+                              placeholder="Search tables"
+                              value={permissionFinderTableSearchTerm}
+                              onChange={(event) => setPermissionFinderTableSearchTerm(event.target.value)}
+                            />
+                            <div className="report-selection-meta">
+                              <span>{availablePermissionFinderTables.length} shown</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addPermissionFinderTables(availablePermissionFinderTables)}
+                              disabled={availablePermissionFinderTables.length === 0 || permissionFinderTablesLoading}
+                            >
+                              Add All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={availablePermissionFinderTablePickIds}
+                              onChange={(event) => {
+                                setAvailablePermissionFinderTablePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) addPermissionFinderTables([value])
+                              }}
+                            >
+                              {availablePermissionFinderTables.map((table) => (
+                                <option key={table} value={table}>
+                                  {table}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="report-dual-actions">
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addPermissionFinderTables(availablePermissionFinderTablePickIds)}
+                              disabled={availablePermissionFinderTablePickIds.length === 0}
+                            >
+                              Choose →
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removePermissionFinderTables(selectedPermissionFinderTablePickIds)}
+                              disabled={selectedPermissionFinderTablePickIds.length === 0}
+                            >
+                              ← Remove
+                            </button>
+                          </div>
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Selected</label>
+                            <div className="report-selection-meta">
+                              <span>{selectedPermissionFinderTableIds.length} selected</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removePermissionFinderTables(selectedPermissionFinderTableIds)}
+                              disabled={selectedPermissionFinderTableIds.length === 0}
+                            >
+                              Remove All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={selectedPermissionFinderTablePickIds}
+                              onChange={(event) => {
+                                setSelectedPermissionFinderTablePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) removePermissionFinderTables([value])
+                              }}
+                            >
+                              {selectedPermissionFinderTables.map((table) => (
+                                <option key={table} value={table}>
+                                  {table}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        {permissionFinderTablesLoading && (
+                          <div className="notice">Loading available tables...</div>
+                        )}
+                        {permissionFinderTablesError && (
+                          <div className="notice error">{permissionFinderTablesError}</div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {reportError && <div className="notice error">{reportError}</div>}
+
+              {reportResult && (
+                <div className="report-results">
+                  <div className="report-results-header">
+                    <h4>{reportResult.title}</h4>
+                    <p>
+                      Showing up to {REPORT_PREVIEW_ROW_LIMIT} rows and {REPORT_PREVIEW_COLUMN_LIMIT} columns in the app. CSV export includes full results.
+                    </p>
+                    {reportSummary && (
+                      <div className="report-summary-grid">
+                        <div className="report-summary-item">
+                          <span className="report-summary-label">Rows</span>
+                          <strong>{reportSummary.rowCount}</strong>
+                        </div>
+                        <div className="report-summary-item">
+                          <span className="report-summary-label">Columns</span>
+                          <strong>{reportSummary.columnCount}</strong>
+                        </div>
+                        <div className="report-summary-item">
+                          <span className="report-summary-label">
+                            {reportResult.kind === 'matrix' ? 'Assigned Cells' : 'Present Permissions'}
+                          </span>
+                          <strong>{reportSummary.dataPointCount}</strong>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {reportResult.kind === 'matrix' && (
+                    <div className="report-table-wrap">
+                      <table className="report-table">
+                        <thead>
+                          <tr>
+                            <th>{reportResult.rowLabel}</th>
+                            {reportResult.columns.slice(0, REPORT_PREVIEW_COLUMN_LIMIT).map((column) => (
+                              <th key={column.id}>{column.label}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reportResult.rows.slice(0, REPORT_PREVIEW_ROW_LIMIT).map((row) => (
+                            <tr key={row.id}>
+                              <td>{row.label}</td>
+                              {row.cells.slice(0, REPORT_PREVIEW_COLUMN_LIMIT).map((value, index) => (
+                                <td key={`${row.id}-${index}`}>{value || '-'}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {reportResult.kind === 'comparison' && (
+                    <div className="report-table-wrap">
+                      <table className="report-table">
+                        <thead>
+                          <tr>
+                            <th>{reportResult.itemLabel}</th>
+                            <th>{reportResult.title === 'Permission Finder' ? 'Permission' : 'Detail'}</th>
+                            {reportResult.compareColumns
+                              .slice(0, REPORT_PREVIEW_COLUMN_LIMIT)
+                              .map((column) => (
+                                <th key={column.id}>{column.label}</th>
+                              ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(() => {
+                            const previewRows = reportResult.rows.slice(0, REPORT_PREVIEW_ROW_LIMIT)
+                            const isPermissionFinder = reportResult.title === 'Permission Finder'
+
+                            return previewRows.map((row, rowIndex) => {
+                              const isGroupStart =
+                                !isPermissionFinder ||
+                                rowIndex === 0 ||
+                                previewRows[rowIndex - 1].itemName !== row.itemName
+
+                              let rowSpan = 1
+                              if (isPermissionFinder && isGroupStart) {
+                                while (
+                                  rowIndex + rowSpan < previewRows.length &&
+                                  previewRows[rowIndex + rowSpan].itemName === row.itemName
+                                ) {
+                                  rowSpan += 1
+                                }
+                              }
+
+                              return (
+                                <tr
+                                  key={row.key}
+                                  className={
+                                    isPermissionFinder && isGroupStart && rowIndex > 0
+                                      ? 'report-group-start'
+                                      : ''
+                                  }
+                                >
+                                  {isGroupStart && <td rowSpan={rowSpan}>{row.itemName}</td>}
+                                  <td className={isPermissionFinder ? 'report-permission-label-cell' : ''}>
+                                    {row.detail}
+                                  </td>
+                                  {row.values.slice(0, REPORT_PREVIEW_COLUMN_LIMIT).map((value, index) => (
+                                    <td key={`${row.key}-${index}`} className="report-comparison-cell">
+                                      {isPermissionFinder
+                                        ? renderPermissionFinderCellValue(value, `${row.key}-${index}`)
+                                        : value}
+                                    </td>
+                                  ))}
+                                </tr>
+                              )
+                            })
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="grid-table">
             <div className="grid-header" style={{ gridTemplateColumns: gridTemplate }}>
               {gridConfig[activeTab].columns.map((column) => (
                 <span key={column.key}>{column.label}</span>
@@ -2863,6 +4339,8 @@ function App() {
               </button>
             )}
           </div>
+            </>
+          )}
         </section>
 
         <aside className={`detail-panel ${detailOpen ? 'is-open' : ''}`}>
@@ -4528,8 +6006,6 @@ function App() {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
-        licenseStatus={licenseStatus}
-        onLicenseUpdated={setLicenseStatus}
         theme={theme}
       />
     </div>
