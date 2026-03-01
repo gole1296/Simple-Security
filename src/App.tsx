@@ -36,6 +36,8 @@ const USER_PAGE_SIZE = 500
 const ROLE_PAGE_SIZE = 200
 const RELATIONSHIP_PAGE_SIZE = 200
 const ACTION_PAGE_SIZE = 50
+const REPORT_PREVIEW_ROW_LIMIT = 150
+const REPORT_PREVIEW_COLUMN_LIMIT = 25
 
 const ACTION_OPERATION_VALUES = {
   associate: 884680000,
@@ -124,6 +126,48 @@ type LabeledProfile = {
 }
 
 type ManageModalType = 'user' | 'team' | 'role' | 'profile'
+
+type ReportType = 'usersByRole' | 'usersByProfile' | 'permissionComparison'
+
+type MatrixCellStatus = '' | 'Direct' | 'Inherited' | 'Both'
+
+type MatrixReportRow = {
+  id: string
+  label: string
+  cells: MatrixCellStatus[]
+}
+
+type MatrixReportResult = {
+  kind: 'matrix'
+  title: string
+  rowLabel: string
+  columnLabel: string
+  columns: { id: string; label: string }[]
+  rows: MatrixReportRow[]
+  csvFileName: string
+  csvHeader: string[]
+  csvRows: string[][]
+}
+
+type ComparisonReportRow = {
+  key: string
+  itemName: string
+  detail: string
+  values: string[]
+}
+
+type ComparisonReportResult = {
+  kind: 'comparison'
+  title: string
+  itemLabel: string
+  compareColumns: { id: string; label: string }[]
+  rows: ComparisonReportRow[]
+  csvFileName: string
+  csvHeader: string[]
+  csvRows: string[][]
+}
+
+type ReportResult = MatrixReportResult | ComparisonReportResult
 
 type ManageModalState = {
   type: ManageModalType
@@ -311,6 +355,39 @@ const extractEntitySchemaFromPrivilege = (name?: string) => {
   return entity.toLowerCase()
 }
 
+const ROLE_PERMISSION_ACTIONS = [
+  'Create',
+  'Read',
+  'Write',
+  'Delete',
+  'Append',
+  'AppendTo',
+  'Assign',
+  'Share',
+] as const
+
+const rolePermissionLabel = (action: (typeof ROLE_PERMISSION_ACTIONS)[number]) =>
+  action === 'AppendTo' ? 'Append To' : action
+
+const parsePrivilegeActionAndTable = (name?: string) => {
+  if (!name) return null
+  const trimmed = name.startsWith('prv') ? name.slice(3) : name
+  const action = ROLE_PERMISSION_ACTIONS.find((entry) => trimmed.startsWith(entry))
+  if (!action) return null
+  const table = trimmed.slice(action.length)
+  if (!table) return null
+  return { action, table: table.toLowerCase() }
+}
+
+const roleDepthLabel = (value?: string | number) => {
+  const depth = Number(value ?? 0)
+  if (depth >= 8) return 'Organization'
+  if (depth >= 4) return 'Parent Child'
+  if (depth >= 2) return 'Business Unit'
+  if (depth >= 1) return 'User'
+  return 'None'
+}
+
 function App() {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
 
@@ -324,7 +401,7 @@ function App() {
   })
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState<
-    'users' | 'teams' | 'roles' | 'profiles' | 'actions'
+    'users' | 'teams' | 'roles' | 'profiles' | 'actions' | 'reports'
   >('users')
   const [userSearch, setUserSearch] = useState('')
   const [hideSystemUsers, setHideSystemUsers] = useState(true)
@@ -431,6 +508,35 @@ function App() {
   const [manageUserResults, setManageUserResults] = useState<Systemusers[]>([])
   const [manageUserResultsLoading, setManageUserResultsLoading] = useState(false)
   const [manageUserResultsError, setManageUserResultsError] = useState<string | null>(null)
+
+  const [selectedReportType, setSelectedReportType] = useState<ReportType>('usersByRole')
+  const [reportParametersCollapsed, setReportParametersCollapsed] = useState(false)
+  const [hideEmptyReportColumns, setHideEmptyReportColumns] = useState(false)
+  const [selectedReportUserIds, setSelectedReportUserIds] = useState<string[]>([])
+  const [selectedReportRoleIds, setSelectedReportRoleIds] = useState<string[]>([])
+  const [selectedReportProfileIds, setSelectedReportProfileIds] = useState<string[]>([])
+  const [availableReportUserPickIds, setAvailableReportUserPickIds] = useState<string[]>([])
+  const [selectedReportUserPickIds, setSelectedReportUserPickIds] = useState<string[]>([])
+  const [availableReportRolePickIds, setAvailableReportRolePickIds] = useState<string[]>([])
+  const [selectedReportRolePickIds, setSelectedReportRolePickIds] = useState<string[]>([])
+  const [availableReportProfilePickIds, setAvailableReportProfilePickIds] = useState<string[]>([])
+  const [selectedReportProfilePickIds, setSelectedReportProfilePickIds] = useState<string[]>([])
+  const [comparisonTarget, setComparisonTarget] = useState<'roles' | 'profiles'>('roles')
+  const [comparisonMode, setComparisonMode] = useState<'all' | 'matching' | 'differences'>('all')
+  const [selectedComparisonRoleIds, setSelectedComparisonRoleIds] = useState<string[]>([])
+  const [selectedComparisonProfileIds, setSelectedComparisonProfileIds] = useState<string[]>([])
+  const [availableComparisonRolePickIds, setAvailableComparisonRolePickIds] = useState<string[]>([])
+  const [selectedComparisonRolePickIds, setSelectedComparisonRolePickIds] = useState<string[]>([])
+  const [availableComparisonProfilePickIds, setAvailableComparisonProfilePickIds] = useState<string[]>([])
+  const [selectedComparisonProfilePickIds, setSelectedComparisonProfilePickIds] = useState<string[]>([])
+  const [reportUserSearchTerm, setReportUserSearchTerm] = useState('')
+  const [reportRoleSearchTerm, setReportRoleSearchTerm] = useState('')
+  const [reportProfileSearchTerm, setReportProfileSearchTerm] = useState('')
+  const [comparisonRoleSearchTerm, setComparisonRoleSearchTerm] = useState('')
+  const [comparisonProfileSearchTerm, setComparisonProfileSearchTerm] = useState('')
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
+  const [reportResult, setReportResult] = useState<ReportResult | null>(null)
 
   const selectedUser = useMemo(
     () => users.find((user) => user.systemuserid === selectedUserId) ?? null,
@@ -864,13 +970,298 @@ function App() {
     })
   }, [profiles, profileSearch])
 
-  const handleTabChange = (tab: 'users' | 'teams' | 'roles' | 'profiles' | 'actions') => {
+  const reportUserOptions = useMemo(
+    () =>
+      [...users]
+        .filter((user) => !shouldHideSystemUser(user))
+        .filter(matchesUserStatusFilter)
+        .sort((a, b) =>
+          getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, {
+            sensitivity: 'base',
+          })
+        ),
+    [users, hideSystemUsers, userStatusFilter]
+  )
+
+  const reportRoleOptions = useMemo(
+    () =>
+      [...roles].sort((a, b) =>
+        (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+      ),
+    [roles]
+  )
+
+  const reportProfileOptions = useMemo(
+    () =>
+      [...profiles].sort((a, b) =>
+        (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+      ),
+    [profiles]
+  )
+
+  const filteredReportUserOptions = useMemo(() => {
+    const term = normalizeSearchValue(reportUserSearchTerm)
+    if (!term) return reportUserOptions
+    return reportUserOptions.filter((user) =>
+      [getUserDisplayName(user), user.internalemailaddress ?? '', user.systemuserid]
+        .join(' ')
+        .toLowerCase()
+        .includes(term)
+    )
+  }, [reportUserOptions, reportUserSearchTerm])
+
+  const filteredReportRoleOptions = useMemo(() => {
+    const term = normalizeSearchValue(reportRoleSearchTerm)
+    if (!term) return reportRoleOptions
+    return reportRoleOptions.filter((role) =>
+      [role.name ?? '', role.description ?? '', role.roleid].join(' ').toLowerCase().includes(term)
+    )
+  }, [reportRoleOptions, reportRoleSearchTerm])
+
+  const filteredReportProfileOptions = useMemo(() => {
+    const term = normalizeSearchValue(reportProfileSearchTerm)
+    if (!term) return reportProfileOptions
+    return reportProfileOptions.filter((profile) =>
+      [profile.name ?? '', profile.description ?? '', profile.fieldsecurityprofileid]
+        .join(' ')
+        .toLowerCase()
+        .includes(term)
+    )
+  }, [reportProfileOptions, reportProfileSearchTerm])
+
+  const filteredComparisonRoleOptions = useMemo(() => {
+    const term = normalizeSearchValue(comparisonRoleSearchTerm)
+    if (!term) return reportRoleOptions
+    return reportRoleOptions.filter((role) =>
+      [role.name ?? '', role.description ?? '', role.roleid].join(' ').toLowerCase().includes(term)
+    )
+  }, [reportRoleOptions, comparisonRoleSearchTerm])
+
+  const filteredComparisonProfileOptions = useMemo(() => {
+    const term = normalizeSearchValue(comparisonProfileSearchTerm)
+    if (!term) return reportProfileOptions
+    return reportProfileOptions.filter((profile) =>
+      [profile.name ?? '', profile.description ?? '', profile.fieldsecurityprofileid]
+        .join(' ')
+        .toLowerCase()
+        .includes(term)
+    )
+  }, [reportProfileOptions, comparisonProfileSearchTerm])
+
+  const availableComparisonRoles = useMemo(
+    () =>
+      filteredComparisonRoleOptions.filter(
+        (role) => !selectedComparisonRoleIds.includes(role.roleid)
+      ),
+    [filteredComparisonRoleOptions, selectedComparisonRoleIds]
+  )
+
+  const selectedComparisonRoles = useMemo(
+    () =>
+      reportRoleOptions.filter((role) => selectedComparisonRoleIds.includes(role.roleid)),
+    [reportRoleOptions, selectedComparisonRoleIds]
+  )
+
+  const availableComparisonProfiles = useMemo(
+    () =>
+      filteredComparisonProfileOptions.filter(
+        (profile) => !selectedComparisonProfileIds.includes(profile.fieldsecurityprofileid)
+      ),
+    [filteredComparisonProfileOptions, selectedComparisonProfileIds]
+  )
+
+  const selectedComparisonProfiles = useMemo(
+    () =>
+      reportProfileOptions.filter((profile) =>
+        selectedComparisonProfileIds.includes(profile.fieldsecurityprofileid)
+      ),
+    [reportProfileOptions, selectedComparisonProfileIds]
+  )
+
+  const availableReportUsers = useMemo(
+    () =>
+      filteredReportUserOptions.filter(
+        (user) => !selectedReportUserIds.includes(user.systemuserid)
+      ),
+    [filteredReportUserOptions, selectedReportUserIds]
+  )
+
+  const selectedReportUsers = useMemo(
+    () => reportUserOptions.filter((user) => selectedReportUserIds.includes(user.systemuserid)),
+    [reportUserOptions, selectedReportUserIds]
+  )
+
+  const availableReportRoles = useMemo(
+    () =>
+      filteredReportRoleOptions.filter((role) => !selectedReportRoleIds.includes(role.roleid)),
+    [filteredReportRoleOptions, selectedReportRoleIds]
+  )
+
+  const selectedReportRoles = useMemo(
+    () => reportRoleOptions.filter((role) => selectedReportRoleIds.includes(role.roleid)),
+    [reportRoleOptions, selectedReportRoleIds]
+  )
+
+  const availableReportProfiles = useMemo(
+    () =>
+      filteredReportProfileOptions.filter(
+        (profile) => !selectedReportProfileIds.includes(profile.fieldsecurityprofileid)
+      ),
+    [filteredReportProfileOptions, selectedReportProfileIds]
+  )
+
+  const selectedReportProfiles = useMemo(
+    () =>
+      reportProfileOptions.filter((profile) =>
+        selectedReportProfileIds.includes(profile.fieldsecurityprofileid)
+      ),
+    [reportProfileOptions, selectedReportProfileIds]
+  )
+
+  const addReportUsers = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSelectedReportUserIds((prev) => uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id))
+    setAvailableReportUserPickIds([])
+    setReportResult(null)
+  }
+
+  const removeReportUsers = (ids: string[]) => {
+    if (ids.length === 0) return
+    const removeSet = new Set(ids)
+    setSelectedReportUserIds((prev) => prev.filter((id) => !removeSet.has(id)))
+    setSelectedReportUserPickIds([])
+    setReportResult(null)
+  }
+
+  const addReportRoles = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSelectedReportRoleIds((prev) => uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id))
+    setAvailableReportRolePickIds([])
+    setReportResult(null)
+  }
+
+  const removeReportRoles = (ids: string[]) => {
+    if (ids.length === 0) return
+    const removeSet = new Set(ids)
+    setSelectedReportRoleIds((prev) => prev.filter((id) => !removeSet.has(id)))
+    setSelectedReportRolePickIds([])
+    setReportResult(null)
+  }
+
+  const addReportProfiles = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSelectedReportProfileIds((prev) =>
+      uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id)
+    )
+    setAvailableReportProfilePickIds([])
+    setReportResult(null)
+  }
+
+  const removeReportProfiles = (ids: string[]) => {
+    if (ids.length === 0) return
+    const removeSet = new Set(ids)
+    setSelectedReportProfileIds((prev) => prev.filter((id) => !removeSet.has(id)))
+    setSelectedReportProfilePickIds([])
+    setReportResult(null)
+  }
+
+  const addComparisonRoles = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSelectedComparisonRoleIds((prev) =>
+      uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id)
+    )
+    setAvailableComparisonRolePickIds([])
+    setReportResult(null)
+  }
+
+  const removeComparisonRoles = (ids: string[]) => {
+    if (ids.length === 0) return
+    const removeSet = new Set(ids)
+    setSelectedComparisonRoleIds((prev) => prev.filter((id) => !removeSet.has(id)))
+    setSelectedComparisonRolePickIds([])
+    setReportResult(null)
+  }
+
+  const addComparisonProfiles = (ids: string[]) => {
+    if (ids.length === 0) return
+    setSelectedComparisonProfileIds((prev) =>
+      uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id)
+    )
+    setAvailableComparisonProfilePickIds([])
+    setReportResult(null)
+  }
+
+  const removeComparisonProfiles = (ids: string[]) => {
+    if (ids.length === 0) return
+    const removeSet = new Set(ids)
+    setSelectedComparisonProfileIds((prev) => prev.filter((id) => !removeSet.has(id)))
+    setSelectedComparisonProfilePickIds([])
+    setReportResult(null)
+  }
+
+  const canRunReport = useMemo(() => {
+    if (selectedReportType === 'usersByRole') {
+      const usersOk = selectedReportUserIds.length > 0
+      const rolesOk = selectedReportRoleIds.length > 0
+      return usersOk && rolesOk
+    }
+
+    if (selectedReportType === 'usersByProfile') {
+      const usersOk = selectedReportUserIds.length > 0
+      const profilesOk = selectedReportProfileIds.length > 0
+      return usersOk && profilesOk
+    }
+
+    if (comparisonTarget === 'roles') {
+      return selectedComparisonRoleIds.length > 0
+    }
+
+    return selectedComparisonProfileIds.length > 0
+  }, [
+    selectedReportType,
+    selectedReportUserIds,
+    selectedReportRoleIds,
+    selectedReportProfileIds,
+    comparisonTarget,
+    selectedComparisonRoleIds,
+    selectedComparisonProfileIds,
+  ])
+
+  const reportSummary = useMemo(() => {
+    if (!reportResult) return null
+    if (reportResult.kind === 'matrix') {
+      const populatedCells = reportResult.rows.reduce(
+        (total, row) => total + row.cells.filter((cell) => cell !== '').length,
+        0
+      )
+      return {
+        rowCount: reportResult.rows.length,
+        columnCount: reportResult.columns.length,
+        dataPointCount: populatedCells,
+      }
+    }
+
+    const presentValues = reportResult.rows.reduce(
+      (total, row) => total + row.values.filter((value) => value === 'Yes').length,
+      0
+    )
+    return {
+      rowCount: reportResult.rows.length,
+      columnCount: reportResult.compareColumns.length,
+      dataPointCount: presentValues,
+    }
+  }, [reportResult])
+
+  const handleTabChange = (
+    tab: 'users' | 'teams' | 'roles' | 'profiles' | 'actions' | 'reports'
+  ) => {
     setActiveTab(tab)
     setSelectedUserId(null)
     setSelectedTeamId(null)
     setSelectedRoleId(null)
     setSelectedProfileId(null)
     setSelectedActionId(null)
+    setReportError(null)
     setUserDetail(null)
     setTeamDetail(null)
     setRoleDetail(null)
@@ -1097,17 +1488,30 @@ function App() {
     }
   }
 
+  const downloadCsv = (fileName: string, header: string[], rows: Array<Array<string | number>>) => {
+    const toCsvValue = (value: string) => `"${value.replace(/"/g, '""')}"`
+    const csv = [header, ...rows]
+      .map((row) => row.map((value) => toCsvValue(String(value))).join(','))
+      .join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const exportActionsCsv = () => {
     if (actions.length === 0) return
 
-    const toCsvValue = (value: string) => `"${value.replace(/"/g, '""')}"`
-
     const rows = actions.map((action) => {
       const record = action as unknown as Record<string, unknown>
-      const principalType =
-        getFormattedValue(record, 'ope_principletype') || 'Unknown'
-      const relatedType =
-        getFormattedValue(record, 'ope_relatedtype') || 'Unknown'
+      const principalType = getFormattedValue(record, 'ope_principletype') || 'Unknown'
+      const relatedType = getFormattedValue(record, 'ope_relatedtype') || 'Unknown'
       return [
         formatDateTime(action.createdon),
         getActionOperationLabel(action),
@@ -1131,19 +1535,550 @@ function App() {
       'Error',
     ]
 
-    const csv = [header, ...rows]
-      .map((row) => row.map((value) => toCsvValue(String(value))).join(','))
-      .join('\n')
+    downloadCsv(`security-actions-${new Date().toISOString().slice(0, 10)}.csv`, header, rows)
+  }
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `security-actions-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+  const fetchAllSystemUserRoleLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Systemuserrolescollection[] = []
+    do {
+      const result = await SystemuserrolescollectionService.getAll({
+        select: ['systemuserid', 'roleid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(`Unable to load user-role assignments. ${describeError(result.error)}`)
+      }
+      collected.push(...(result.data as Systemuserrolescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllTeamMembershipLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Teammemberships[] = []
+    do {
+      const result = await TeammembershipsService.getAll({
+        select: ['teamid', 'systemuserid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(`Unable to load team memberships. ${describeError(result.error)}`)
+      }
+      collected.push(...(result.data as Teammemberships[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllTeamRoleLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Teamrolescollection[] = []
+    do {
+      const result = await TeamrolescollectionService.getAll({
+        select: ['teamid', 'roleid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(`Unable to load team-role assignments. ${describeError(result.error)}`)
+      }
+      collected.push(...(result.data as Teamrolescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllUserProfileLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Systemuserprofilescollection[] = []
+    do {
+      const result = await SystemuserprofilescollectionService.getAll({
+        select: ['systemuserid', 'fieldsecurityprofileid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(
+          `Unable to load user profile assignments. ${describeError(result.error)}`
+        )
+      }
+      collected.push(...(result.data as Systemuserprofilescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllTeamProfileLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Teamprofilescollection[] = []
+    do {
+      const result = await TeamprofilescollectionService.getAll({
+        select: ['teamid', 'fieldsecurityprofileid'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(
+          `Unable to load team profile assignments. ${describeError(result.error)}`
+        )
+      }
+      collected.push(...(result.data as Teamprofilescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllRolePrivilegeLinks = async () => {
+    let skipToken: string | undefined
+    const collected: Roleprivilegescollection[] = []
+    do {
+      const result = await RoleprivilegescollectionService.getAll({
+        select: ['roleid', 'privilegeid', 'privilegedepthmask'],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(`Unable to load role privileges. ${describeError(result.error)}`)
+      }
+      collected.push(...(result.data as Roleprivilegescollection[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const fetchAllFieldPermissions = async () => {
+    let skipToken: string | undefined
+    const collected: Fieldpermissions[] = []
+    do {
+      const result = await FieldpermissionsService.getAll({
+        select: [
+          'fieldpermissionid',
+          'entityname',
+          'attributelogicalname',
+          'canread',
+          'canupdate',
+          'cancreate',
+          'fieldsecurityprofileid',
+        ],
+        top: RELATIONSHIP_PAGE_SIZE,
+        skipToken,
+      })
+      if (!result.success) {
+        throw new Error(`Unable to load field permissions. ${describeError(result.error)}`)
+      }
+      collected.push(...(result.data as Fieldpermissions[]))
+      skipToken = result.skipToken ?? undefined
+    } while (skipToken)
+    return collected
+  }
+
+  const buildMatrixStatus = (isDirect: boolean, isInherited: boolean): MatrixCellStatus => {
+    if (isDirect && isInherited) return 'Both'
+    if (isDirect) return 'Direct'
+    if (isInherited) return 'Inherited'
+    return ''
+  }
+
+  const runUsersByRoleReport = async () => {
+    const [selectedUsers, selectedRoles, userRoleLinks, teamMembershipLinks, teamRoleLinks] =
+      await Promise.all([
+        fetchUsersByIds(selectedReportUserIds),
+        fetchRolesByIds(selectedReportRoleIds),
+        fetchAllSystemUserRoleLinks(),
+        fetchAllTeamMembershipLinks(),
+        fetchAllTeamRoleLinks(),
+      ])
+
+    const users = selectedUsers
+      .filter((user) => !shouldHideSystemUser(user))
+      .filter(matchesUserStatusFilter)
+      .sort((a, b) => getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, { sensitivity: 'base' }))
+    const roles = [...selectedRoles].sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+    )
+
+    const userIdSet = new Set(users.map((user) => user.systemuserid))
+    const roleIdSet = new Set(roles.map((role) => role.roleid))
+
+    const directAssignments = new Set(
+      userRoleLinks
+        .filter((link) => userIdSet.has(link.systemuserid) && roleIdSet.has(link.roleid))
+        .map((link) => `${link.systemuserid}|${link.roleid}`)
+    )
+
+    const teamIdsByUser = new Map<string, Set<string>>()
+    teamMembershipLinks.forEach((link) => {
+      if (!userIdSet.has(link.systemuserid)) return
+      if (!teamIdsByUser.has(link.systemuserid)) {
+        teamIdsByUser.set(link.systemuserid, new Set<string>())
+      }
+      teamIdsByUser.get(link.systemuserid)?.add(link.teamid)
+    })
+
+    const roleIdsByTeam = new Map<string, Set<string>>()
+    teamRoleLinks.forEach((link) => {
+      if (!roleIdSet.has(link.roleid)) return
+      if (!roleIdsByTeam.has(link.teamid)) {
+        roleIdsByTeam.set(link.teamid, new Set<string>())
+      }
+      roleIdsByTeam.get(link.teamid)?.add(link.roleid)
+    })
+
+    const columns = roles.map((role) => ({ id: role.roleid, label: role.name ?? 'Unnamed role' }))
+    const rows: MatrixReportRow[] = users.map((user) => {
+      const userTeams = teamIdsByUser.get(user.systemuserid) ?? new Set<string>()
+      const matrixCells = columns.map((column) => {
+        const direct = directAssignments.has(`${user.systemuserid}|${column.id}`)
+        let inherited = false
+        userTeams.forEach((teamId) => {
+          if (roleIdsByTeam.get(teamId)?.has(column.id)) {
+            inherited = true
+          }
+        })
+        return buildMatrixStatus(direct, inherited)
+      })
+
+      return {
+        id: user.systemuserid,
+        label: getUserDisplayName(user),
+        cells: matrixCells,
+      }
+    })
+
+    let finalColumns = columns
+    let finalRows = rows
+
+    if (hideEmptyReportColumns) {
+      const visibleColumnIndexes = columns
+        .map((_, index) => index)
+        .filter((index) => rows.some((row) => row.cells[index] !== ''))
+
+      finalColumns = visibleColumnIndexes.map((index) => columns[index])
+      finalRows = rows.map((row) => ({
+        ...row,
+        cells: visibleColumnIndexes.map((index) => row.cells[index]),
+      }))
+    }
+
+    const csvHeader = ['User', ...finalColumns.map((column) => column.label)]
+    const csvRows = finalRows.map((row) => [row.label, ...row.cells])
+
+    setReportResult({
+      kind: 'matrix',
+      title: 'Users by Security Role',
+      rowLabel: 'User',
+      columnLabel: 'Security Role',
+      columns: finalColumns,
+      rows: finalRows,
+      csvFileName: `users-by-security-role-${new Date().toISOString().slice(0, 10)}.csv`,
+      csvHeader,
+      csvRows,
+    })
+  }
+
+  const runUsersByProfileReport = async () => {
+    const [selectedUsers, selectedProfiles, userProfileLinks, teamMembershipLinks, teamProfileLinks] =
+      await Promise.all([
+        fetchUsersByIds(selectedReportUserIds),
+        fetchProfilesByIds(selectedReportProfileIds),
+        fetchAllUserProfileLinks(),
+        fetchAllTeamMembershipLinks(),
+        fetchAllTeamProfileLinks(),
+      ])
+
+    const users = selectedUsers
+      .filter((user) => !shouldHideSystemUser(user))
+      .filter(matchesUserStatusFilter)
+      .sort((a, b) => getUserDisplayName(a).localeCompare(getUserDisplayName(b), undefined, { sensitivity: 'base' }))
+    const profiles = [...selectedProfiles].sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+    )
+
+    const userIdSet = new Set(users.map((user) => user.systemuserid))
+    const profileIdSet = new Set(profiles.map((profile) => profile.fieldsecurityprofileid))
+
+    const directAssignments = new Set(
+      userProfileLinks
+        .filter(
+          (link) => userIdSet.has(link.systemuserid) && profileIdSet.has(link.fieldsecurityprofileid)
+        )
+        .map((link) => `${link.systemuserid}|${link.fieldsecurityprofileid}`)
+    )
+
+    const teamIdsByUser = new Map<string, Set<string>>()
+    teamMembershipLinks.forEach((link) => {
+      if (!userIdSet.has(link.systemuserid)) return
+      if (!teamIdsByUser.has(link.systemuserid)) {
+        teamIdsByUser.set(link.systemuserid, new Set<string>())
+      }
+      teamIdsByUser.get(link.systemuserid)?.add(link.teamid)
+    })
+
+    const profileIdsByTeam = new Map<string, Set<string>>()
+    teamProfileLinks.forEach((link) => {
+      if (!profileIdSet.has(link.fieldsecurityprofileid)) return
+      if (!profileIdsByTeam.has(link.teamid)) {
+        profileIdsByTeam.set(link.teamid, new Set<string>())
+      }
+      profileIdsByTeam.get(link.teamid)?.add(link.fieldsecurityprofileid)
+    })
+
+    const columns = profiles.map((profile) => ({
+      id: profile.fieldsecurityprofileid,
+      label: profile.name ?? 'Unnamed profile',
+    }))
+    const rows: MatrixReportRow[] = users.map((user) => {
+      const userTeams = teamIdsByUser.get(user.systemuserid) ?? new Set<string>()
+      const matrixCells = columns.map((column) => {
+        const direct = directAssignments.has(`${user.systemuserid}|${column.id}`)
+        let inherited = false
+        userTeams.forEach((teamId) => {
+          if (profileIdsByTeam.get(teamId)?.has(column.id)) {
+            inherited = true
+          }
+        })
+        return buildMatrixStatus(direct, inherited)
+      })
+
+      return {
+        id: user.systemuserid,
+        label: getUserDisplayName(user),
+        cells: matrixCells,
+      }
+    })
+
+    let finalColumns = columns
+    let finalRows = rows
+
+    if (hideEmptyReportColumns) {
+      const visibleColumnIndexes = columns
+        .map((_, index) => index)
+        .filter((index) => rows.some((row) => row.cells[index] !== ''))
+
+      finalColumns = visibleColumnIndexes.map((index) => columns[index])
+      finalRows = rows.map((row) => ({
+        ...row,
+        cells: visibleColumnIndexes.map((index) => row.cells[index]),
+      }))
+    }
+
+    const csvHeader = ['User', ...finalColumns.map((column) => column.label)]
+    const csvRows = finalRows.map((row) => [row.label, ...row.cells])
+
+    setReportResult({
+      kind: 'matrix',
+      title: 'Users by Field Security Profile',
+      rowLabel: 'User',
+      columnLabel: 'Field Security Profile',
+      columns: finalColumns,
+      rows: finalRows,
+      csvFileName: `users-by-field-security-profile-${new Date().toISOString().slice(0, 10)}.csv`,
+      csvHeader,
+      csvRows,
+    })
+  }
+
+  const runPermissionComparisonReport = async () => {
+    if (comparisonTarget === 'roles') {
+      const rolesToCompare = await fetchRolesByIds(selectedComparisonRoleIds)
+
+      const roles = [...rolesToCompare].sort((a, b) =>
+        (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+      )
+      const roleIdSet = new Set(roles.map((role) => role.roleid))
+      const links = (await fetchAllRolePrivilegeLinks()).filter(
+        (link) => roleIdSet.has(link.roleid) && Number(link.privilegedepthmask ?? 0) > 0
+      )
+
+      const privilegeIds = uniqueById(links.map((link) => ({ id: link.privilegeid }))).map((item) => item.id)
+      const privileges = await fetchPrivilegesByIds(privilegeIds)
+      const privilegeNameById = new Map(
+        privileges.map((privilege) => [privilege.privilegeid, privilege.name ?? ''])
+      )
+
+      const columns = roles.map((role) => ({ id: role.roleid, label: role.name ?? 'Unnamed role' }))
+      const roleTablePermissions = new Map<
+        string,
+        Map<string, Map<(typeof ROLE_PERMISSION_ACTIONS)[number], string>>
+      >()
+
+      links.forEach((link) => {
+        const privilegeName = privilegeNameById.get(link.privilegeid)
+        const parsed = parsePrivilegeActionAndTable(privilegeName)
+        if (!parsed) return
+
+        if (!roleTablePermissions.has(link.roleid)) {
+          roleTablePermissions.set(link.roleid, new Map())
+        }
+
+        const tableMap = roleTablePermissions.get(link.roleid)!
+        if (!tableMap.has(parsed.table)) {
+          tableMap.set(parsed.table, new Map())
+        }
+
+        tableMap.get(parsed.table)!.set(parsed.action, roleDepthLabel(link.privilegedepthmask))
+      })
+
+      const tables = Array.from(
+        new Set(
+          Array.from(roleTablePermissions.values()).flatMap((tableMap) => Array.from(tableMap.keys()))
+        )
+      ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+      const rows = tables
+        .map((table) => {
+          const values = columns.map((column) => {
+            const actionMap = roleTablePermissions.get(column.id)?.get(table)
+            const lines = ROLE_PERMISSION_ACTIONS.map((action) => {
+              const level = actionMap?.get(action) ?? 'None'
+              return `${rolePermissionLabel(action)}: ${level}`
+            })
+            return lines.join('\n')
+          })
+          const valueFingerprint = values.join('||')
+          const uniqueValues = new Set(values)
+          return {
+            key: table,
+            itemName: table,
+            detail: 'Create/Read/Write/Delete/Append/Append To/Assign/Share',
+            values,
+            valueFingerprint,
+            uniqueValueCount: uniqueValues.size,
+          }
+        })
+        .filter((row) => {
+          if (comparisonMode === 'matching') return row.uniqueValueCount === 1
+          if (comparisonMode === 'differences') return row.uniqueValueCount > 1
+          return true
+        })
+        .sort((a, b) => a.itemName.localeCompare(b.itemName, undefined, { sensitivity: 'base' }))
+
+      const csvHeader = ['Table', 'Permissions', ...columns.map((column) => column.label)]
+      const csvRows = rows.map((row) => [row.itemName, row.detail, ...row.values])
+
+      setReportResult({
+        kind: 'comparison',
+        title: 'Role Permission Comparison',
+        itemLabel: 'Table',
+        compareColumns: columns,
+        rows: rows.map((row) => ({
+          key: row.key,
+          itemName: row.itemName,
+          detail: row.detail,
+          values: row.values,
+        })),
+        csvFileName: `role-permission-comparison-${new Date().toISOString().slice(0, 10)}.csv`,
+        csvHeader,
+        csvRows,
+      })
+      return
+    }
+
+    const profilesToCompare = await fetchProfilesByIds(selectedComparisonProfileIds)
+
+    const profiles = [...profilesToCompare].sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
+    )
+    const profileIdSet = new Set(profiles.map((profile) => profile.fieldsecurityprofileid))
+
+    const permissions = (await fetchAllFieldPermissions()).filter((permission) => {
+      const profileId = String(permission.fieldsecurityprofileid ?? '')
+      return profileId ? profileIdSet.has(profileId) : false
+    })
+    const columns = profiles.map((profile) => ({
+      id: profile.fieldsecurityprofileid,
+      label: profile.name ?? 'Unnamed profile',
+    }))
+
+    const keysByProfile = new Map<string, Set<string>>()
+    permissions.forEach((permission) => {
+      const profileId = String(permission.fieldsecurityprofileid ?? '')
+      if (!profileId) return
+      const tupleKey = `${permission.entityname}|${permission.attributelogicalname}|${String(permission.canread ?? '')}|${String(permission.cancreate ?? '')}|${String(permission.canupdate ?? '')}`
+      if (!keysByProfile.has(profileId)) {
+        keysByProfile.set(profileId, new Set<string>())
+      }
+      keysByProfile.get(profileId)?.add(tupleKey)
+    })
+
+    const allKeys = Array.from(
+      new Set(
+        permissions.map(
+          (permission) =>
+            `${permission.entityname}|${permission.attributelogicalname}|${String(permission.canread ?? '')}|${String(permission.cancreate ?? '')}|${String(permission.canupdate ?? '')}`
+        )
+      )
+    )
+
+    const rows = allKeys
+      .map((key) => {
+        const [entityName, attributeName, canRead, canCreate, canUpdate] = key.split('|')
+        const values = columns.map((column) =>
+          keysByProfile.get(column.id)?.has(key) ? 'Yes' : 'No'
+        )
+        const yesCount = values.filter((value) => value === 'Yes').length
+        return {
+          key,
+          itemName: `${entityName}.${attributeName}`,
+          detail: `Read: ${permissionLabel(canRead)} | Create: ${permissionLabel(canCreate)} | Update: ${permissionLabel(canUpdate)}`,
+          values,
+          yesCount,
+        }
+      })
+      .filter((row) => {
+        if (comparisonMode === 'matching') return row.yesCount === columns.length
+        if (comparisonMode === 'differences') return row.yesCount > 0 && row.yesCount < columns.length
+        return true
+      })
+      .sort((a, b) => a.itemName.localeCompare(b.itemName, undefined, { sensitivity: 'base' }))
+
+    const csvHeader = ['Permission', 'Detail', ...columns.map((column) => column.label)]
+    const csvRows = rows.map((row) => [row.itemName, row.detail, ...row.values])
+
+    setReportResult({
+      kind: 'comparison',
+      title: 'Field Security Profile Permission Comparison',
+      itemLabel: 'Permission',
+      compareColumns: columns,
+      rows: rows.map((row) => ({
+        key: row.key,
+        itemName: row.itemName,
+        detail: row.detail,
+        values: row.values,
+      })),
+      csvFileName: `field-profile-permission-comparison-${new Date().toISOString().slice(0, 10)}.csv`,
+      csvHeader,
+      csvRows,
+    })
+  }
+
+  const runSelectedReport = async () => {
+    setReportLoading(true)
+    setReportError(null)
+    setReportResult(null)
+    try {
+      if (selectedReportType === 'usersByRole') {
+        await runUsersByRoleReport()
+      } else if (selectedReportType === 'usersByProfile') {
+        await runUsersByProfileReport()
+      } else {
+        await runPermissionComparisonReport()
+      }
+    } catch (error) {
+      console.error('[Reports] Run failed', error)
+      setReportError(describeError(error))
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  const exportCurrentReportCsv = () => {
+    if (!reportResult) return
+    downloadCsv(reportResult.csvFileName, reportResult.csvHeader, reportResult.csvRows)
   }
 
   const fetchRolesByIds = async (ids: string[]) => {
@@ -1955,6 +2890,7 @@ function App() {
     roles: 'Review assignments for users and teams, including inherited memberships.',
     profiles: 'Inspect field permissions and profile memberships.',
     actions: 'Track association requests, status, and error details.',
+    reports: 'Run security reporting views and export results in CSV for Excel.',
   }
 
   const tabTitles: Record<typeof activeTab, string> = {
@@ -1963,6 +2899,7 @@ function App() {
     roles: 'Security Roles',
     profiles: 'Field Security Profiles',
     actions: 'Security Actions',
+    reports: 'Reports',
   }
 
   const gridConfig = {
@@ -2013,6 +2950,10 @@ function App() {
         { key: 'status', label: 'Status' },
       ],
       template: '1fr 1.2fr 0.9fr 1.2fr 1fr 0.8fr 140px',
+    },
+    reports: {
+      columns: [{ key: 'reporting', label: 'Reporting' }],
+      template: '1fr',
     },
   } as const
 
@@ -2170,6 +3111,24 @@ function App() {
             <span className="tab-text">
               <span className="tab-title">Security Actions</span>
               <span className="tab-meta">Review requests and completion status.</span>
+            </span>
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'reports' ? 'is-active' : ''}`}
+            onClick={() => handleTabChange('reports')}
+            title="Reports"
+          >
+            <span className="tab-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" role="presentation">
+                <path d="M4 5h16v14H4z" />
+                <path d="M8 15V9" />
+                <path d="M12 15v-4" />
+                <path d="M16 15v-2" />
+              </svg>
+            </span>
+            <span className="tab-text">
+              <span className="tab-title">Reports</span>
+              <span className="tab-meta">Run matrix/comparison reports and export CSV.</span>
             </span>
           </button>
         </div>
@@ -2362,6 +3321,26 @@ function App() {
                   </label>
                 </div>
               )}
+              {activeTab === 'reports' && (
+                <div className="panel-header-controls">
+                  <label className="toggle">
+                    <span>Report Type</span>
+                    <select
+                      className="filter-select"
+                      value={selectedReportType}
+                      onChange={(event) => {
+                        setSelectedReportType(event.target.value as ReportType)
+                        setReportError(null)
+                        setReportResult(null)
+                      }}
+                    >
+                      <option value="usersByRole">Users by Security Role</option>
+                      <option value="usersByProfile">Users by Field Security Profile</option>
+                      <option value="permissionComparison">Permission Comparison</option>
+                    </select>
+                  </label>
+                </div>
+              )}
               <div className="panel-header-actions">
                 <label className="toggle">
                   <span>User Status</span>
@@ -2415,10 +3394,800 @@ function App() {
                     </button>
                   </>
                 )}
+                {activeTab === 'reports' && (
+                  <>
+                    <button
+                      className="ghost-button"
+                      onClick={() => {
+                        setReportResult(null)
+                        setReportError(null)
+                        setReportUserSearchTerm('')
+                        setReportRoleSearchTerm('')
+                        setReportProfileSearchTerm('')
+                        setComparisonRoleSearchTerm('')
+                        setComparisonProfileSearchTerm('')
+                        setAvailableReportUserPickIds([])
+                        setSelectedReportUserPickIds([])
+                        setAvailableReportRolePickIds([])
+                        setSelectedReportRolePickIds([])
+                        setAvailableReportProfilePickIds([])
+                        setSelectedReportProfilePickIds([])
+                        setAvailableComparisonRolePickIds([])
+                        setSelectedComparisonRolePickIds([])
+                        setAvailableComparisonProfilePickIds([])
+                        setSelectedComparisonProfilePickIds([])
+                      }}
+                      disabled={reportLoading}
+                    >
+                      Clear
+                    </button>
+                    <button className="ghost-button" onClick={runSelectedReport} disabled={reportLoading || !canRunReport}>
+                      {reportLoading ? 'Running...' : 'Run Report'}
+                    </button>
+                    <button
+                      className="ghost-button"
+                      onClick={exportCurrentReportCsv}
+                      disabled={!reportResult || reportLoading}
+                    >
+                      Export CSV
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
-          <div className="grid-table">
+          {activeTab === 'reports' ? (
+            <div className="reports-workspace">
+              <div className="reports-card-grid">
+                <button
+                  className={`report-card ${selectedReportType === 'usersByRole' ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setSelectedReportType('usersByRole')
+                    setReportResult(null)
+                    setReportError(null)
+                    setReportRoleSearchTerm('')
+                  }}
+                  type="button"
+                >
+                  <h3>Users by Security Role</h3>
+                  <p>Rows are users and columns are roles. Cells show Direct, Inherited, or Both.</p>
+                </button>
+                <button
+                  className={`report-card ${selectedReportType === 'usersByProfile' ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setSelectedReportType('usersByProfile')
+                    setReportResult(null)
+                    setReportError(null)
+                    setReportProfileSearchTerm('')
+                  }}
+                  type="button"
+                >
+                  <h3>Users by Field Security Profile</h3>
+                  <p>Rows are users and columns are profiles. Cells show Direct, Inherited, or Both.</p>
+                </button>
+                <button
+                  className={`report-card ${selectedReportType === 'permissionComparison' ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setSelectedReportType('permissionComparison')
+                    setReportResult(null)
+                    setReportError(null)
+                    setComparisonRoleSearchTerm('')
+                    setComparisonProfileSearchTerm('')
+                  }}
+                  type="button"
+                >
+                  <h3>Permission Comparison</h3>
+                  <p>Compare selected security roles or field security profiles by permissions.</p>
+                </button>
+              </div>
+
+              {selectedReportType !== 'permissionComparison' && (
+                <div className="report-parameter-panel">
+                  <div className="report-parameter-header">
+                    <h4>Parameters</h4>
+                    <button
+                      type="button"
+                      className="ghost-button small"
+                      onClick={() => setReportParametersCollapsed((prev) => !prev)}
+                    >
+                      {reportParametersCollapsed ? 'Expand' : 'Collapse'}
+                    </button>
+                  </div>
+
+                  {!reportParametersCollapsed && (
+                    <>
+                      <div className="report-parameter-row">
+                        <label className="toggle">
+                          <input
+                            type="checkbox"
+                            checked={hideEmptyReportColumns}
+                            onChange={(event) => {
+                              setHideEmptyReportColumns(event.target.checked)
+                              setReportResult(null)
+                            }}
+                          />
+                          <span>Hide roles/profiles with no users in results</span>
+                        </label>
+                      </div>
+
+                      <div className="report-parameter-row">
+                        <span className="report-list-label">Users</span>
+                        <div className="report-dual-list">
+                        <div className="report-multi-select-wrap">
+                          <label className="report-list-label">Available</label>
+                          <input
+                            className="filter-input"
+                            type="search"
+                            placeholder="Search users"
+                            value={reportUserSearchTerm}
+                            onChange={(event) => setReportUserSearchTerm(event.target.value)}
+                          />
+                          <div className="report-selection-meta">
+                            <span>{availableReportUsers.length} shown</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-button small"
+                            onClick={() => addReportUsers(availableReportUsers.map((user) => user.systemuserid))}
+                            disabled={availableReportUsers.length === 0}
+                          >
+                            Add All
+                          </button>
+                          <select
+                            className="report-multi-select"
+                            multiple
+                            value={availableReportUserPickIds}
+                            onChange={(event) => {
+                              setAvailableReportUserPickIds(
+                                Array.from(event.target.selectedOptions).map((option) => option.value)
+                              )
+                            }}
+                            onDoubleClick={(event) => {
+                              const value = (event.target as HTMLOptionElement).value
+                              if (value) addReportUsers([value])
+                            }}
+                          >
+                            {availableReportUsers.map((user) => (
+                              <option key={user.systemuserid} value={user.systemuserid}>
+                                {getUserDisplayName(user)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="report-dual-actions">
+                          <button
+                            type="button"
+                            className="ghost-button small"
+                            onClick={() => addReportUsers(availableReportUserPickIds)}
+                            disabled={availableReportUserPickIds.length === 0}
+                          >
+                            Choose →
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button small"
+                            onClick={() => removeReportUsers(selectedReportUserPickIds)}
+                            disabled={selectedReportUserPickIds.length === 0}
+                          >
+                            ← Remove
+                          </button>
+                        </div>
+                        <div className="report-multi-select-wrap">
+                          <label className="report-list-label">Selected</label>
+                          <div className="report-selection-meta">
+                            <span>{selectedReportUserIds.length} selected</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-button small"
+                            onClick={() => removeReportUsers(selectedReportUserIds)}
+                            disabled={selectedReportUserIds.length === 0}
+                          >
+                            Remove All
+                          </button>
+                          <select
+                            className="report-multi-select"
+                            multiple
+                            value={selectedReportUserPickIds}
+                            onChange={(event) => {
+                              setSelectedReportUserPickIds(
+                                Array.from(event.target.selectedOptions).map((option) => option.value)
+                              )
+                            }}
+                            onDoubleClick={(event) => {
+                              const value = (event.target as HTMLOptionElement).value
+                              if (value) removeReportUsers([value])
+                            }}
+                          >
+                            {selectedReportUsers.map((user) => (
+                              <option key={user.systemuserid} value={user.systemuserid}>
+                                {getUserDisplayName(user)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        </div>
+                      </div>
+
+                      {selectedReportType === 'usersByRole' && (
+                        <div className="report-parameter-row">
+                          <span className="report-list-label">Security Roles</span>
+                          <div className="report-dual-list">
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Available</label>
+                            <input
+                              className="filter-input"
+                              type="search"
+                              placeholder="Search roles"
+                              value={reportRoleSearchTerm}
+                              onChange={(event) => setReportRoleSearchTerm(event.target.value)}
+                            />
+                            <div className="report-selection-meta">
+                              <span>{availableReportRoles.length} shown</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addReportRoles(availableReportRoles.map((role) => role.roleid))}
+                              disabled={availableReportRoles.length === 0}
+                            >
+                              Add All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={availableReportRolePickIds}
+                              onChange={(event) => {
+                                setAvailableReportRolePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) addReportRoles([value])
+                              }}
+                            >
+                              {availableReportRoles.map((role) => (
+                                <option key={role.roleid} value={role.roleid}>
+                                  {role.name ?? 'Unnamed role'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="report-dual-actions">
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addReportRoles(availableReportRolePickIds)}
+                              disabled={availableReportRolePickIds.length === 0}
+                            >
+                              Choose →
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeReportRoles(selectedReportRolePickIds)}
+                              disabled={selectedReportRolePickIds.length === 0}
+                            >
+                              ← Remove
+                            </button>
+                          </div>
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Selected</label>
+                            <div className="report-selection-meta">
+                              <span>{selectedReportRoleIds.length} selected</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeReportRoles(selectedReportRoleIds)}
+                              disabled={selectedReportRoleIds.length === 0}
+                            >
+                              Remove All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={selectedReportRolePickIds}
+                              onChange={(event) => {
+                                setSelectedReportRolePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) removeReportRoles([value])
+                              }}
+                            >
+                              {selectedReportRoles.map((role) => (
+                                <option key={role.roleid} value={role.roleid}>
+                                  {role.name ?? 'Unnamed role'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedReportType === 'usersByProfile' && (
+                        <div className="report-parameter-row">
+                          <span className="report-list-label">Field Security Profiles</span>
+                          <div className="report-dual-list">
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Available</label>
+                            <input
+                              className="filter-input"
+                              type="search"
+                              placeholder="Search profiles"
+                              value={reportProfileSearchTerm}
+                              onChange={(event) => setReportProfileSearchTerm(event.target.value)}
+                            />
+                            <div className="report-selection-meta">
+                              <span>{availableReportProfiles.length} shown</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() =>
+                                addReportProfiles(
+                                  availableReportProfiles.map(
+                                    (profile) => profile.fieldsecurityprofileid
+                                  )
+                                )
+                              }
+                              disabled={availableReportProfiles.length === 0}
+                            >
+                              Add All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={availableReportProfilePickIds}
+                              onChange={(event) => {
+                                setAvailableReportProfilePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) addReportProfiles([value])
+                              }}
+                            >
+                              {availableReportProfiles.map((profile) => (
+                                <option
+                                  key={profile.fieldsecurityprofileid}
+                                  value={profile.fieldsecurityprofileid}
+                                >
+                                  {profile.name ?? 'Unnamed profile'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="report-dual-actions">
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addReportProfiles(availableReportProfilePickIds)}
+                              disabled={availableReportProfilePickIds.length === 0}
+                            >
+                              Choose →
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeReportProfiles(selectedReportProfilePickIds)}
+                              disabled={selectedReportProfilePickIds.length === 0}
+                            >
+                              ← Remove
+                            </button>
+                          </div>
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Selected</label>
+                            <div className="report-selection-meta">
+                              <span>{selectedReportProfileIds.length} selected</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeReportProfiles(selectedReportProfileIds)}
+                              disabled={selectedReportProfileIds.length === 0}
+                            >
+                              Remove All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={selectedReportProfilePickIds}
+                              onChange={(event) => {
+                                setSelectedReportProfilePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) removeReportProfiles([value])
+                              }}
+                            >
+                              {selectedReportProfiles.map((profile) => (
+                                <option
+                                  key={profile.fieldsecurityprofileid}
+                                  value={profile.fieldsecurityprofileid}
+                                >
+                                  {profile.name ?? 'Unnamed profile'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {selectedReportType === 'permissionComparison' && (
+                <div className="report-parameter-panel">
+                  <div className="report-parameter-header">
+                    <h4>Parameters</h4>
+                    <button
+                      type="button"
+                      className="ghost-button small"
+                      onClick={() => setReportParametersCollapsed((prev) => !prev)}
+                    >
+                      {reportParametersCollapsed ? 'Expand' : 'Collapse'}
+                    </button>
+                  </div>
+
+                  {!reportParametersCollapsed && (
+                    <>
+                      <div className="report-parameter-row">
+                        <label className="toggle">
+                          <span>Compare</span>
+                          <select
+                            className="filter-select"
+                            value={comparisonTarget}
+                            onChange={(event) => {
+                              setComparisonTarget(event.target.value as 'roles' | 'profiles')
+                              setReportResult(null)
+                            }}
+                          >
+                            <option value="roles">Security Roles</option>
+                            <option value="profiles">Field Security Profiles</option>
+                          </select>
+                        </label>
+                        <label className="toggle">
+                          <span>Mode</span>
+                          <select
+                            className="filter-select"
+                            value={comparisonMode}
+                            onChange={(event) => {
+                              setComparisonMode(
+                                event.target.value as 'all' | 'matching' | 'differences'
+                              )
+                              setReportResult(null)
+                            }}
+                          >
+                            <option value="all">All permissions</option>
+                            <option value="matching">Matching only</option>
+                            <option value="differences">Differences only</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      {comparisonTarget === 'roles' && (
+                        <div className="report-parameter-row">
+                          <span className="report-list-label">Roles</span>
+                          <div className="report-dual-list">
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Available</label>
+                            <input
+                              className="filter-input"
+                              type="search"
+                              placeholder="Search roles"
+                              value={comparisonRoleSearchTerm}
+                              onChange={(event) => setComparisonRoleSearchTerm(event.target.value)}
+                            />
+                            <div className="report-selection-meta">
+                              <span>{availableComparisonRoles.length} shown</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() =>
+                                addComparisonRoles(
+                                  availableComparisonRoles.map((role) => role.roleid)
+                                )
+                              }
+                              disabled={availableComparisonRoles.length === 0}
+                            >
+                              Add All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={availableComparisonRolePickIds}
+                              onChange={(event) => {
+                                setAvailableComparisonRolePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) addComparisonRoles([value])
+                              }}
+                            >
+                              {availableComparisonRoles.map((role) => (
+                                <option key={role.roleid} value={role.roleid}>
+                                  {role.name ?? 'Unnamed role'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="report-dual-actions">
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addComparisonRoles(availableComparisonRolePickIds)}
+                              disabled={availableComparisonRolePickIds.length === 0}
+                            >
+                              Choose →
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeComparisonRoles(selectedComparisonRolePickIds)}
+                              disabled={selectedComparisonRolePickIds.length === 0}
+                            >
+                              ← Remove
+                            </button>
+                          </div>
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Selected</label>
+                            <div className="report-selection-meta">
+                              <span>{selectedComparisonRoleIds.length} selected</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeComparisonRoles(selectedComparisonRoleIds)}
+                              disabled={selectedComparisonRoleIds.length === 0}
+                            >
+                              Remove All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={selectedComparisonRolePickIds}
+                              onChange={(event) => {
+                                setSelectedComparisonRolePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) removeComparisonRoles([value])
+                              }}
+                            >
+                              {selectedComparisonRoles.map((role) => (
+                                <option key={role.roleid} value={role.roleid}>
+                                  {role.name ?? 'Unnamed role'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {comparisonTarget === 'profiles' && (
+                          <div className="report-parameter-row">
+                            <span className="report-list-label">Profiles</span>
+                            <div className="report-dual-list">
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Available</label>
+                            <input
+                              className="filter-input"
+                              type="search"
+                              placeholder="Search profiles"
+                              value={comparisonProfileSearchTerm}
+                              onChange={(event) => setComparisonProfileSearchTerm(event.target.value)}
+                            />
+                            <div className="report-selection-meta">
+                              <span>{availableComparisonProfiles.length} shown</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() =>
+                                addComparisonProfiles(
+                                  availableComparisonProfiles.map(
+                                    (profile) => profile.fieldsecurityprofileid
+                                  )
+                                )
+                              }
+                              disabled={availableComparisonProfiles.length === 0}
+                            >
+                              Add All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={availableComparisonProfilePickIds}
+                              onChange={(event) => {
+                                setAvailableComparisonProfilePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) addComparisonProfiles([value])
+                              }}
+                            >
+                              {availableComparisonProfiles.map((profile) => (
+                                <option
+                                  key={profile.fieldsecurityprofileid}
+                                  value={profile.fieldsecurityprofileid}
+                                >
+                                  {profile.name ?? 'Unnamed profile'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="report-dual-actions">
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => addComparisonProfiles(availableComparisonProfilePickIds)}
+                              disabled={availableComparisonProfilePickIds.length === 0}
+                            >
+                              Choose →
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeComparisonProfiles(selectedComparisonProfilePickIds)}
+                              disabled={selectedComparisonProfilePickIds.length === 0}
+                            >
+                              ← Remove
+                            </button>
+                          </div>
+                          <div className="report-multi-select-wrap">
+                            <label className="report-list-label">Selected</label>
+                            <div className="report-selection-meta">
+                              <span>{selectedComparisonProfileIds.length} selected</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="ghost-button small"
+                              onClick={() => removeComparisonProfiles(selectedComparisonProfileIds)}
+                              disabled={selectedComparisonProfileIds.length === 0}
+                            >
+                              Remove All
+                            </button>
+                            <select
+                              className="report-multi-select"
+                              multiple
+                              value={selectedComparisonProfilePickIds}
+                              onChange={(event) => {
+                                setSelectedComparisonProfilePickIds(
+                                  Array.from(event.target.selectedOptions).map((option) => option.value)
+                                )
+                              }}
+                              onDoubleClick={(event) => {
+                                const value = (event.target as HTMLOptionElement).value
+                                if (value) removeComparisonProfiles([value])
+                              }}
+                            >
+                              {selectedComparisonProfiles.map((profile) => (
+                                <option
+                                  key={profile.fieldsecurityprofileid}
+                                  value={profile.fieldsecurityprofileid}
+                                >
+                                  {profile.name ?? 'Unnamed profile'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                </div>
+              )}
+
+              {reportError && <div className="notice error">{reportError}</div>}
+
+              {reportResult && (
+                <div className="report-results">
+                  <div className="report-results-header">
+                    <h4>{reportResult.title}</h4>
+                    <p>
+                      Showing up to {REPORT_PREVIEW_ROW_LIMIT} rows and {REPORT_PREVIEW_COLUMN_LIMIT} columns in the app. CSV export includes full results.
+                    </p>
+                    {reportSummary && (
+                      <div className="report-summary-grid">
+                        <div className="report-summary-item">
+                          <span className="report-summary-label">Rows</span>
+                          <strong>{reportSummary.rowCount}</strong>
+                        </div>
+                        <div className="report-summary-item">
+                          <span className="report-summary-label">Columns</span>
+                          <strong>{reportSummary.columnCount}</strong>
+                        </div>
+                        <div className="report-summary-item">
+                          <span className="report-summary-label">
+                            {reportResult.kind === 'matrix' ? 'Assigned Cells' : 'Present Permissions'}
+                          </span>
+                          <strong>{reportSummary.dataPointCount}</strong>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {reportResult.kind === 'matrix' && (
+                    <div className="report-table-wrap">
+                      <table className="report-table">
+                        <thead>
+                          <tr>
+                            <th>{reportResult.rowLabel}</th>
+                            {reportResult.columns.slice(0, REPORT_PREVIEW_COLUMN_LIMIT).map((column) => (
+                              <th key={column.id}>{column.label}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reportResult.rows.slice(0, REPORT_PREVIEW_ROW_LIMIT).map((row) => (
+                            <tr key={row.id}>
+                              <td>{row.label}</td>
+                              {row.cells.slice(0, REPORT_PREVIEW_COLUMN_LIMIT).map((value, index) => (
+                                <td key={`${row.id}-${index}`}>{value || '-'}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {reportResult.kind === 'comparison' && (
+                    <div className="report-table-wrap">
+                      <table className="report-table">
+                        <thead>
+                          <tr>
+                            <th>{reportResult.itemLabel}</th>
+                            <th>Detail</th>
+                            {reportResult.compareColumns
+                              .slice(0, REPORT_PREVIEW_COLUMN_LIMIT)
+                              .map((column) => (
+                                <th key={column.id}>{column.label}</th>
+                              ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reportResult.rows.slice(0, REPORT_PREVIEW_ROW_LIMIT).map((row) => (
+                            <tr key={row.key}>
+                              <td>{row.itemName}</td>
+                              <td>{row.detail}</td>
+                              {row.values.slice(0, REPORT_PREVIEW_COLUMN_LIMIT).map((value, index) => (
+                                <td key={`${row.key}-${index}`} className="report-comparison-cell">
+                                  {value}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="grid-table">
             <div className="grid-header" style={{ gridTemplateColumns: gridTemplate }}>
               {gridConfig[activeTab].columns.map((column) => (
                 <span key={column.key}>{column.label}</span>
@@ -2616,6 +4385,8 @@ function App() {
               </button>
             )}
           </div>
+            </>
+          )}
         </section>
 
         <aside className={`detail-panel ${detailOpen ? 'is-open' : ''}`}>
