@@ -50,48 +50,50 @@ export function SettingsModal({
         onClick={(e) => e.stopPropagation()}
         data-theme={theme}
       >
-        <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Settings</h3>
+        <h3 style={{ marginTop: 0, marginBottom: '20px' }}>About</h3>
+
+        <div
+          style={{
+            marginBottom: '18px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
+          <img
+            src={logo8035}
+            alt="8035 Solutions"
+            style={{ height: '34px', width: 'auto' }}
+          />
+          <span style={{ fontSize: '14px', color: 'var(--color-text-muted)' }}>
+            Developed by <strong>8035 Solutions</strong>
+          </span>
+        </div>
 
         <p style={{ marginBottom: '20px', color: 'var(--color-text-subtle)', lineHeight: 1.5 }}>
-          App developed by 8035 Solutions.
+          This application is developed by 8035 Solutions and offered free of charge under the MIT
+          License. You may use, modify, and share it under MIT terms, but it should remain free for
+          the community and not be resold as a paid product on its own.
         </p>
 
-        {/* Close Button */}
+        <p style={{ marginBottom: '0', color: 'var(--color-text-subtle)', lineHeight: 1.5 }}>
+          GitHub and “Buy Me a Coffee” links will be added here in a future update.
+        </p>
+
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '20px' }}>
           <button
             onClick={onClose}
             style={{
               padding: '8px 16px',
-              background: '#6c757d',
-              color: '#fff',
-              border: 'none',
+              background: 'var(--color-surface-alt)',
+              color: 'var(--color-text)',
+              border: '1px solid var(--color-border-strong)',
               borderRadius: '4px',
               cursor: 'pointer',
             }}
           >
             Close
           </button>
-        </div>
-
-        {/* Developer Branding */}
-        <div style={{
-          marginTop: '24px',
-          paddingTop: '16px',
-          borderTop: '1px solid var(--color-border)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          justifyContent: 'center',
-          opacity: 0.7,
-        }}>
-          <img 
-            src={logo8035} 
-            alt="8035 Solutions" 
-            style={{ height: '32px', width: 'auto' }}
-          />
-          <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            App developed by <strong>8035 Solutions</strong>
-          </span>
         </div>
       </div>
     </div>

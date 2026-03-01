@@ -127,7 +127,7 @@ type LabeledProfile = {
 
 type ManageModalType = 'user' | 'team' | 'role' | 'profile'
 
-type ReportType = 'usersByRole' | 'usersByProfile' | 'permissionComparison'
+type ReportType = 'usersByRole' | 'usersByProfile' | 'permissionFinder'
 
 type MatrixCellStatus = '' | 'Direct' | 'Inherited' | 'Both'
 
@@ -366,26 +366,86 @@ const ROLE_PERMISSION_ACTIONS = [
   'Share',
 ] as const
 
+const PERMISSION_FINDER_ACTIONS = [
+  'Create',
+  'Read',
+  'Write',
+  'Delete',
+  'Append',
+  'AppendTo',
+  'Share',
+  'Assign',
+] as const
+const PERMISSION_FINDER_ACTION_SET = new Set<string>(PERMISSION_FINDER_ACTIONS)
+
 const rolePermissionLabel = (action: (typeof ROLE_PERMISSION_ACTIONS)[number]) =>
   action === 'AppendTo' ? 'Append To' : action
 
 const parsePrivilegeActionAndTable = (name?: string) => {
   if (!name) return null
   const trimmed = name.startsWith('prv') ? name.slice(3) : name
-  const action = ROLE_PERMISSION_ACTIONS.find((entry) => trimmed.startsWith(entry))
+  const action = [...ROLE_PERMISSION_ACTIONS]
+    .sort((a, b) => b.length - a.length)
+    .find((entry) => trimmed.startsWith(entry))
   if (!action) return null
   const table = trimmed.slice(action.length)
   if (!table) return null
   return { action, table: table.toLowerCase() }
 }
 
+const roleDepthRank = (value?: string | number) => {
+  const depth = Number(value ?? 0)
+  if (depth >= 8) return 4
+  if (depth >= 4) return 3
+  if (depth >= 2) return 2
+  if (depth >= 1) return 1
+  return 0
+}
+
 const roleDepthLabel = (value?: string | number) => {
   const depth = Number(value ?? 0)
   if (depth >= 8) return 'Organization'
-  if (depth >= 4) return 'Parent Child'
+  if (depth >= 4) return 'Parent: Child Business Units'
   if (depth >= 2) return 'Business Unit'
   if (depth >= 1) return 'User'
   return 'None'
+}
+
+const canonicalizeScopeLabel = (scope: string) => {
+  const normalized = scope
+    .trim()
+    .toLowerCase()
+    .replace(/[\/_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+
+  if (!normalized || normalized === 'none') return 'None'
+  if (normalized.includes('organization')) return 'Organization'
+  if (normalized.includes('parent') && normalized.includes('child')) {
+    return 'Parent: Child Business Units'
+  }
+  if (normalized.includes('business unit')) return 'Business Unit'
+  if (normalized.includes('user')) return 'User'
+  return 'None'
+}
+
+const scopeClassName = (scope: string) => {
+  const normalized = canonicalizeScopeLabel(scope).toLowerCase()
+  if (normalized === 'organization') return 'scope-org'
+  if (normalized === 'parent: child business units') return 'scope-parent-bu'
+  if (normalized === 'business unit') return 'scope-bu'
+  if (normalized === 'user') return 'scope-user'
+  return 'scope-none'
+}
+
+const renderPermissionFinderCellValue = (value: string, key: string) => {
+  const scope = canonicalizeScopeLabel(value)
+  return (
+    <div className="permission-scope-list">
+      <div key={key} className="permission-scope-line">
+        <span className={`permission-scope-badge ${scopeClassName(scope)}`}>{scope}</span>
+      </div>
+    </div>
+  )
 }
 
 function App() {
@@ -521,19 +581,22 @@ function App() {
   const [selectedReportRolePickIds, setSelectedReportRolePickIds] = useState<string[]>([])
   const [availableReportProfilePickIds, setAvailableReportProfilePickIds] = useState<string[]>([])
   const [selectedReportProfilePickIds, setSelectedReportProfilePickIds] = useState<string[]>([])
-  const [comparisonTarget, setComparisonTarget] = useState<'roles' | 'profiles'>('roles')
-  const [comparisonMode, setComparisonMode] = useState<'all' | 'matching' | 'differences'>('all')
   const [selectedComparisonRoleIds, setSelectedComparisonRoleIds] = useState<string[]>([])
-  const [selectedComparisonProfileIds, setSelectedComparisonProfileIds] = useState<string[]>([])
   const [availableComparisonRolePickIds, setAvailableComparisonRolePickIds] = useState<string[]>([])
   const [selectedComparisonRolePickIds, setSelectedComparisonRolePickIds] = useState<string[]>([])
-  const [availableComparisonProfilePickIds, setAvailableComparisonProfilePickIds] = useState<string[]>([])
-  const [selectedComparisonProfilePickIds, setSelectedComparisonProfilePickIds] = useState<string[]>([])
+  const [permissionFinderTableOptions, setPermissionFinderTableOptions] = useState<string[]>([])
+  const [selectedPermissionFinderTableIds, setSelectedPermissionFinderTableIds] = useState<string[]>([])
+  const [availablePermissionFinderTablePickIds, setAvailablePermissionFinderTablePickIds] =
+    useState<string[]>([])
+  const [selectedPermissionFinderTablePickIds, setSelectedPermissionFinderTablePickIds] =
+    useState<string[]>([])
   const [reportUserSearchTerm, setReportUserSearchTerm] = useState('')
   const [reportRoleSearchTerm, setReportRoleSearchTerm] = useState('')
   const [reportProfileSearchTerm, setReportProfileSearchTerm] = useState('')
   const [comparisonRoleSearchTerm, setComparisonRoleSearchTerm] = useState('')
-  const [comparisonProfileSearchTerm, setComparisonProfileSearchTerm] = useState('')
+  const [permissionFinderTableSearchTerm, setPermissionFinderTableSearchTerm] = useState('')
+  const [permissionFinderTablesLoading, setPermissionFinderTablesLoading] = useState(false)
+  const [permissionFinderTablesError, setPermissionFinderTablesError] = useState<string | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
   const [reportResult, setReportResult] = useState<ReportResult | null>(null)
@@ -1037,16 +1100,11 @@ function App() {
     )
   }, [reportRoleOptions, comparisonRoleSearchTerm])
 
-  const filteredComparisonProfileOptions = useMemo(() => {
-    const term = normalizeSearchValue(comparisonProfileSearchTerm)
-    if (!term) return reportProfileOptions
-    return reportProfileOptions.filter((profile) =>
-      [profile.name ?? '', profile.description ?? '', profile.fieldsecurityprofileid]
-        .join(' ')
-        .toLowerCase()
-        .includes(term)
-    )
-  }, [reportProfileOptions, comparisonProfileSearchTerm])
+  const filteredPermissionFinderTableOptions = useMemo(() => {
+    const term = normalizeSearchValue(permissionFinderTableSearchTerm)
+    if (!term) return permissionFinderTableOptions
+    return permissionFinderTableOptions.filter((table) => table.toLowerCase().includes(term))
+  }, [permissionFinderTableOptions, permissionFinderTableSearchTerm])
 
   const availableComparisonRoles = useMemo(
     () =>
@@ -1062,21 +1120,68 @@ function App() {
     [reportRoleOptions, selectedComparisonRoleIds]
   )
 
-  const availableComparisonProfiles = useMemo(
+  const availablePermissionFinderTables = useMemo(
     () =>
-      filteredComparisonProfileOptions.filter(
-        (profile) => !selectedComparisonProfileIds.includes(profile.fieldsecurityprofileid)
+      filteredPermissionFinderTableOptions.filter(
+        (table) => !selectedPermissionFinderTableIds.includes(table)
       ),
-    [filteredComparisonProfileOptions, selectedComparisonProfileIds]
+    [filteredPermissionFinderTableOptions, selectedPermissionFinderTableIds]
   )
 
-  const selectedComparisonProfiles = useMemo(
+  const selectedPermissionFinderTables = useMemo(
     () =>
-      reportProfileOptions.filter((profile) =>
-        selectedComparisonProfileIds.includes(profile.fieldsecurityprofileid)
-      ),
-    [reportProfileOptions, selectedComparisonProfileIds]
+      permissionFinderTableOptions.filter((table) => selectedPermissionFinderTableIds.includes(table)),
+    [permissionFinderTableOptions, selectedPermissionFinderTableIds]
   )
+
+  useEffect(() => {
+    if (selectedReportType !== 'permissionFinder') return
+
+    let isActive = true
+    const loadTables = async () => {
+      setPermissionFinderTablesLoading(true)
+      setPermissionFinderTablesError(null)
+      try {
+        const links = (await fetchAllRolePrivilegeLinks()).filter(
+          (link) => Number(link.privilegedepthmask ?? 0) > 0
+        )
+        const privilegeIds = uniqueById(links.map((link) => ({ id: link.privilegeid }))).map(
+          (item) => item.id
+        )
+        const privileges = await fetchPrivilegesByIds(privilegeIds)
+
+        const tables = Array.from(
+          new Set(
+            privileges
+              .map((privilege) => parsePrivilegeActionAndTable(privilege.name ?? ''))
+              .filter(
+                (parsed): parsed is { action: (typeof ROLE_PERMISSION_ACTIONS)[number]; table: string } =>
+                  !!parsed && PERMISSION_FINDER_ACTION_SET.has(parsed.action)
+              )
+              .map((parsed) => parsed.table)
+          )
+        ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+        if (!isActive) return
+        setPermissionFinderTableOptions(tables)
+        setSelectedPermissionFinderTableIds((prev) => prev.filter((table) => tables.includes(table)))
+      } catch (error) {
+        if (!isActive) return
+        setPermissionFinderTablesError(describeError(error))
+        setPermissionFinderTableOptions([])
+      } finally {
+        if (isActive) {
+          setPermissionFinderTablesLoading(false)
+        }
+      }
+    }
+
+    loadTables()
+
+    return () => {
+      isActive = false
+    }
+  }, [selectedReportType])
 
   const availableReportUsers = useMemo(
     () =>
@@ -1182,20 +1287,20 @@ function App() {
     setReportResult(null)
   }
 
-  const addComparisonProfiles = (ids: string[]) => {
-    if (ids.length === 0) return
-    setSelectedComparisonProfileIds((prev) =>
-      uniqueById([...prev, ...ids].map((id) => ({ id }))).map((item) => item.id)
+  const addPermissionFinderTables = (tables: string[]) => {
+    if (tables.length === 0) return
+    setSelectedPermissionFinderTableIds((prev) =>
+      uniqueById([...prev, ...tables].map((id) => ({ id }))).map((item) => item.id)
     )
-    setAvailableComparisonProfilePickIds([])
+    setAvailablePermissionFinderTablePickIds([])
     setReportResult(null)
   }
 
-  const removeComparisonProfiles = (ids: string[]) => {
-    if (ids.length === 0) return
-    const removeSet = new Set(ids)
-    setSelectedComparisonProfileIds((prev) => prev.filter((id) => !removeSet.has(id)))
-    setSelectedComparisonProfilePickIds([])
+  const removePermissionFinderTables = (tables: string[]) => {
+    if (tables.length === 0) return
+    const removeSet = new Set(tables)
+    setSelectedPermissionFinderTableIds((prev) => prev.filter((table) => !removeSet.has(table)))
+    setSelectedPermissionFinderTablePickIds([])
     setReportResult(null)
   }
 
@@ -1212,19 +1317,14 @@ function App() {
       return usersOk && profilesOk
     }
 
-    if (comparisonTarget === 'roles') {
-      return selectedComparisonRoleIds.length > 0
-    }
-
-    return selectedComparisonProfileIds.length > 0
+    return selectedComparisonRoleIds.length > 0 && selectedPermissionFinderTableIds.length > 0
   }, [
     selectedReportType,
     selectedReportUserIds,
     selectedReportRoleIds,
     selectedReportProfileIds,
-    comparisonTarget,
     selectedComparisonRoleIds,
-    selectedComparisonProfileIds,
+    selectedPermissionFinderTableIds,
   ])
 
   const reportSummary = useMemo(() => {
@@ -1242,7 +1342,15 @@ function App() {
     }
 
     const presentValues = reportResult.rows.reduce(
-      (total, row) => total + row.values.filter((value) => value === 'Yes').length,
+      (total, row) =>
+        total +
+        row.values.reduce((valueTotal, value) => {
+          const grantedCount = value
+            .split('\n')
+            .map((entry) => entry.split(':').slice(1).join(':').trim().toLowerCase())
+            .filter((scope) => scope && scope !== 'none').length
+          return valueTotal + grantedCount
+        }, 0),
       0
     )
     return {
@@ -1650,32 +1758,6 @@ function App() {
     return collected
   }
 
-  const fetchAllFieldPermissions = async () => {
-    let skipToken: string | undefined
-    const collected: Fieldpermissions[] = []
-    do {
-      const result = await FieldpermissionsService.getAll({
-        select: [
-          'fieldpermissionid',
-          'entityname',
-          'attributelogicalname',
-          'canread',
-          'canupdate',
-          'cancreate',
-          'fieldsecurityprofileid',
-        ],
-        top: RELATIONSHIP_PAGE_SIZE,
-        skipToken,
-      })
-      if (!result.success) {
-        throw new Error(`Unable to load field permissions. ${describeError(result.error)}`)
-      }
-      collected.push(...(result.data as Fieldpermissions[]))
-      skipToken = result.skipToken ?? undefined
-    } while (skipToken)
-    return collected
-  }
-
   const buildMatrixStatus = (isDirect: boolean, isInherited: boolean): MatrixCellStatus => {
     if (isDirect && isInherited) return 'Both'
     if (isDirect) return 'Direct'
@@ -1882,175 +1964,80 @@ function App() {
     })
   }
 
-  const runPermissionComparisonReport = async () => {
-    if (comparisonTarget === 'roles') {
-      const rolesToCompare = await fetchRolesByIds(selectedComparisonRoleIds)
-
-      const roles = [...rolesToCompare].sort((a, b) =>
-        (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
-      )
-      const roleIdSet = new Set(roles.map((role) => role.roleid))
-      const links = (await fetchAllRolePrivilegeLinks()).filter(
-        (link) => roleIdSet.has(link.roleid) && Number(link.privilegedepthmask ?? 0) > 0
-      )
-
-      const privilegeIds = uniqueById(links.map((link) => ({ id: link.privilegeid }))).map((item) => item.id)
-      const privileges = await fetchPrivilegesByIds(privilegeIds)
-      const privilegeNameById = new Map(
-        privileges.map((privilege) => [privilege.privilegeid, privilege.name ?? ''])
-      )
-
-      const columns = roles.map((role) => ({ id: role.roleid, label: role.name ?? 'Unnamed role' }))
-      const roleTablePermissions = new Map<
-        string,
-        Map<string, Map<(typeof ROLE_PERMISSION_ACTIONS)[number], string>>
-      >()
-
-      links.forEach((link) => {
-        const privilegeName = privilegeNameById.get(link.privilegeid)
-        const parsed = parsePrivilegeActionAndTable(privilegeName)
-        if (!parsed) return
-
-        if (!roleTablePermissions.has(link.roleid)) {
-          roleTablePermissions.set(link.roleid, new Map())
-        }
-
-        const tableMap = roleTablePermissions.get(link.roleid)!
-        if (!tableMap.has(parsed.table)) {
-          tableMap.set(parsed.table, new Map())
-        }
-
-        tableMap.get(parsed.table)!.set(parsed.action, roleDepthLabel(link.privilegedepthmask))
-      })
-
-      const tables = Array.from(
-        new Set(
-          Array.from(roleTablePermissions.values()).flatMap((tableMap) => Array.from(tableMap.keys()))
-        )
-      ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-
-      const rows = tables
-        .map((table) => {
-          const values = columns.map((column) => {
-            const actionMap = roleTablePermissions.get(column.id)?.get(table)
-            const lines = ROLE_PERMISSION_ACTIONS.map((action) => {
-              const level = actionMap?.get(action) ?? 'None'
-              return `${rolePermissionLabel(action)}: ${level}`
-            })
-            return lines.join('\n')
-          })
-          const valueFingerprint = values.join('||')
-          const uniqueValues = new Set(values)
-          return {
-            key: table,
-            itemName: table,
-            detail: 'Create/Read/Write/Delete/Append/Append To/Assign/Share',
-            values,
-            valueFingerprint,
-            uniqueValueCount: uniqueValues.size,
-          }
-        })
-        .filter((row) => {
-          if (comparisonMode === 'matching') return row.uniqueValueCount === 1
-          if (comparisonMode === 'differences') return row.uniqueValueCount > 1
-          return true
-        })
-        .sort((a, b) => a.itemName.localeCompare(b.itemName, undefined, { sensitivity: 'base' }))
-
-      const csvHeader = ['Table', 'Permissions', ...columns.map((column) => column.label)]
-      const csvRows = rows.map((row) => [row.itemName, row.detail, ...row.values])
-
-      setReportResult({
-        kind: 'comparison',
-        title: 'Role Permission Comparison',
-        itemLabel: 'Table',
-        compareColumns: columns,
-        rows: rows.map((row) => ({
-          key: row.key,
-          itemName: row.itemName,
-          detail: row.detail,
-          values: row.values,
-        })),
-        csvFileName: `role-permission-comparison-${new Date().toISOString().slice(0, 10)}.csv`,
-        csvHeader,
-        csvRows,
-      })
-      return
-    }
-
-    const profilesToCompare = await fetchProfilesByIds(selectedComparisonProfileIds)
-
-    const profiles = [...profilesToCompare].sort((a, b) =>
+  const runPermissionFinderReport = async () => {
+    const rolesToCompare = await fetchRolesByIds(selectedComparisonRoleIds)
+    const roles = [...rolesToCompare].sort((a, b) =>
       (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' })
     )
-    const profileIdSet = new Set(profiles.map((profile) => profile.fieldsecurityprofileid))
 
-    const permissions = (await fetchAllFieldPermissions()).filter((permission) => {
-      const profileId = String(permission.fieldsecurityprofileid ?? '')
-      return profileId ? profileIdSet.has(profileId) : false
-    })
-    const columns = profiles.map((profile) => ({
-      id: profile.fieldsecurityprofileid,
-      label: profile.name ?? 'Unnamed profile',
-    }))
-
-    const keysByProfile = new Map<string, Set<string>>()
-    permissions.forEach((permission) => {
-      const profileId = String(permission.fieldsecurityprofileid ?? '')
-      if (!profileId) return
-      const tupleKey = `${permission.entityname}|${permission.attributelogicalname}|${String(permission.canread ?? '')}|${String(permission.cancreate ?? '')}|${String(permission.canupdate ?? '')}`
-      if (!keysByProfile.has(profileId)) {
-        keysByProfile.set(profileId, new Set<string>())
-      }
-      keysByProfile.get(profileId)?.add(tupleKey)
-    })
-
-    const allKeys = Array.from(
-      new Set(
-        permissions.map(
-          (permission) =>
-            `${permission.entityname}|${permission.attributelogicalname}|${String(permission.canread ?? '')}|${String(permission.cancreate ?? '')}|${String(permission.canupdate ?? '')}`
-        )
-      )
+    const roleIdSet = new Set(roles.map((role) => role.roleid))
+    const links = (await fetchAllRolePrivilegeLinks()).filter(
+      (link) => roleIdSet.has(link.roleid) && Number(link.privilegedepthmask ?? 0) > 0
     )
 
-    const rows = allKeys
-      .map((key) => {
-        const [entityName, attributeName, canRead, canCreate, canUpdate] = key.split('|')
-        const values = columns.map((column) =>
-          keysByProfile.get(column.id)?.has(key) ? 'Yes' : 'No'
-        )
-        const yesCount = values.filter((value) => value === 'Yes').length
-        return {
-          key,
-          itemName: `${entityName}.${attributeName}`,
-          detail: `Read: ${permissionLabel(canRead)} | Create: ${permissionLabel(canCreate)} | Update: ${permissionLabel(canUpdate)}`,
-          values,
-          yesCount,
-        }
-      })
-      .filter((row) => {
-        if (comparisonMode === 'matching') return row.yesCount === columns.length
-        if (comparisonMode === 'differences') return row.yesCount > 0 && row.yesCount < columns.length
-        return true
-      })
-      .sort((a, b) => a.itemName.localeCompare(b.itemName, undefined, { sensitivity: 'base' }))
+    const privilegeIds = uniqueById(links.map((link) => ({ id: link.privilegeid }))).map(
+      (item) => item.id
+    )
+    const privileges = await fetchPrivilegesByIds(privilegeIds)
+    const privilegeNameById = new Map(
+      privileges.map((privilege) => [privilege.privilegeid, privilege.name ?? ''])
+    )
 
-    const csvHeader = ['Permission', 'Detail', ...columns.map((column) => column.label)]
+    const columns = roles.map((role) => ({ id: role.roleid, label: role.name ?? 'Unnamed role' }))
+    const roleTablePermissions = new Map<
+      string,
+      Map<string, Map<(typeof ROLE_PERMISSION_ACTIONS)[number], string>>
+    >()
+
+    links.forEach((link) => {
+      const privilegeName = privilegeNameById.get(link.privilegeid)
+      const parsed = parsePrivilegeActionAndTable(privilegeName)
+      if (!parsed || !PERMISSION_FINDER_ACTION_SET.has(parsed.action)) return
+
+      if (!roleTablePermissions.has(link.roleid)) {
+        roleTablePermissions.set(link.roleid, new Map())
+      }
+
+      const tableMap = roleTablePermissions.get(link.roleid)!
+      if (!tableMap.has(parsed.table)) {
+        tableMap.set(parsed.table, new Map())
+      }
+
+      const actionMap = tableMap.get(parsed.table)!
+      const current = actionMap.get(parsed.action)
+      const currentRank = roleDepthRank(current)
+      const nextRank = roleDepthRank(link.privilegedepthmask)
+      if (nextRank >= currentRank) {
+        actionMap.set(parsed.action, roleDepthLabel(link.privilegedepthmask))
+      }
+    })
+
+    const selectedTables = [...selectedPermissionFinderTableIds].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' })
+    )
+
+    const rows = selectedTables.flatMap((table) =>
+      PERMISSION_FINDER_ACTIONS.map((action) => ({
+        key: `${table}|${action}`,
+        itemName: table,
+        detail: rolePermissionLabel(action),
+        values: columns.map((column) => {
+          const actionMap = roleTablePermissions.get(column.id)?.get(table)
+          return actionMap?.get(action) ?? 'None'
+        }),
+      }))
+    )
+
+    const csvHeader = ['Table', 'Permissions', ...columns.map((column) => column.label)]
     const csvRows = rows.map((row) => [row.itemName, row.detail, ...row.values])
 
     setReportResult({
       kind: 'comparison',
-      title: 'Field Security Profile Permission Comparison',
-      itemLabel: 'Permission',
+      title: 'Permission Finder',
+      itemLabel: 'Table',
       compareColumns: columns,
-      rows: rows.map((row) => ({
-        key: row.key,
-        itemName: row.itemName,
-        detail: row.detail,
-        values: row.values,
-      })),
-      csvFileName: `field-profile-permission-comparison-${new Date().toISOString().slice(0, 10)}.csv`,
+      rows,
+      csvFileName: `permission-finder-${new Date().toISOString().slice(0, 10)}.csv`,
       csvHeader,
       csvRows,
     })
@@ -2066,7 +2053,7 @@ function App() {
       } else if (selectedReportType === 'usersByProfile') {
         await runUsersByProfileReport()
       } else {
-        await runPermissionComparisonReport()
+        await runPermissionFinderReport()
       }
     } catch (error) {
       console.error('[Reports] Run failed', error)
@@ -3158,9 +3145,9 @@ function App() {
               width: navCollapsed ? 'auto' : '100%',
               fontSize: '14px',
             }}
-            title="Open settings"
+            title="Open about"
           >
-            {navCollapsed ? '⚙' : 'Settings'}
+            {navCollapsed ? 'ⓘ' : 'About'}
           </button>
         </div>
       </aside>
@@ -3321,26 +3308,6 @@ function App() {
                   </label>
                 </div>
               )}
-              {activeTab === 'reports' && (
-                <div className="panel-header-controls">
-                  <label className="toggle">
-                    <span>Report Type</span>
-                    <select
-                      className="filter-select"
-                      value={selectedReportType}
-                      onChange={(event) => {
-                        setSelectedReportType(event.target.value as ReportType)
-                        setReportError(null)
-                        setReportResult(null)
-                      }}
-                    >
-                      <option value="usersByRole">Users by Security Role</option>
-                      <option value="usersByProfile">Users by Field Security Profile</option>
-                      <option value="permissionComparison">Permission Comparison</option>
-                    </select>
-                  </label>
-                </div>
-              )}
               <div className="panel-header-actions">
                 <label className="toggle">
                   <span>User Status</span>
@@ -3405,7 +3372,7 @@ function App() {
                         setReportRoleSearchTerm('')
                         setReportProfileSearchTerm('')
                         setComparisonRoleSearchTerm('')
-                        setComparisonProfileSearchTerm('')
+                        setPermissionFinderTableSearchTerm('')
                         setAvailableReportUserPickIds([])
                         setSelectedReportUserPickIds([])
                         setAvailableReportRolePickIds([])
@@ -3414,8 +3381,8 @@ function App() {
                         setSelectedReportProfilePickIds([])
                         setAvailableComparisonRolePickIds([])
                         setSelectedComparisonRolePickIds([])
-                        setAvailableComparisonProfilePickIds([])
-                        setSelectedComparisonProfilePickIds([])
+                        setAvailablePermissionFinderTablePickIds([])
+                        setSelectedPermissionFinderTablePickIds([])
                       }}
                       disabled={reportLoading}
                     >
@@ -3466,22 +3433,22 @@ function App() {
                   <p>Rows are users and columns are profiles. Cells show Direct, Inherited, or Both.</p>
                 </button>
                 <button
-                  className={`report-card ${selectedReportType === 'permissionComparison' ? 'is-active' : ''}`}
+                  className={`report-card ${selectedReportType === 'permissionFinder' ? 'is-active' : ''}`}
                   onClick={() => {
-                    setSelectedReportType('permissionComparison')
+                    setSelectedReportType('permissionFinder')
                     setReportResult(null)
                     setReportError(null)
                     setComparisonRoleSearchTerm('')
-                    setComparisonProfileSearchTerm('')
+                    setPermissionFinderTableSearchTerm('')
                   }}
                   type="button"
                 >
-                  <h3>Permission Comparison</h3>
-                  <p>Compare selected security roles or field security profiles by permissions.</p>
+                  <h3>Permission Finder</h3>
+                  <p>Choose tables and roles to view Create/Read/Write permission scope by role.</p>
                 </button>
               </div>
 
-              {selectedReportType !== 'permissionComparison' && (
+              {selectedReportType !== 'permissionFinder' && (
                 <div className="report-parameter-panel">
                   <div className="report-parameter-header">
                     <h4>Parameters</h4>
@@ -3827,7 +3794,7 @@ function App() {
                 </div>
               )}
 
-              {selectedReportType === 'permissionComparison' && (
+              {selectedReportType === 'permissionFinder' && (
                 <div className="report-parameter-panel">
                   <div className="report-parameter-header">
                     <h4>Parameters</h4>
@@ -3843,43 +3810,8 @@ function App() {
                   {!reportParametersCollapsed && (
                     <>
                       <div className="report-parameter-row">
-                        <label className="toggle">
-                          <span>Compare</span>
-                          <select
-                            className="filter-select"
-                            value={comparisonTarget}
-                            onChange={(event) => {
-                              setComparisonTarget(event.target.value as 'roles' | 'profiles')
-                              setReportResult(null)
-                            }}
-                          >
-                            <option value="roles">Security Roles</option>
-                            <option value="profiles">Field Security Profiles</option>
-                          </select>
-                        </label>
-                        <label className="toggle">
-                          <span>Mode</span>
-                          <select
-                            className="filter-select"
-                            value={comparisonMode}
-                            onChange={(event) => {
-                              setComparisonMode(
-                                event.target.value as 'all' | 'matching' | 'differences'
-                              )
-                              setReportResult(null)
-                            }}
-                          >
-                            <option value="all">All permissions</option>
-                            <option value="matching">Matching only</option>
-                            <option value="differences">Differences only</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      {comparisonTarget === 'roles' && (
-                        <div className="report-parameter-row">
-                          <span className="report-list-label">Roles</span>
-                          <div className="report-dual-list">
+                        <span className="report-list-label">Security Roles</span>
+                        <div className="report-dual-list">
                           <div className="report-multi-select-wrap">
                             <label className="report-list-label">Available</label>
                             <input
@@ -3896,9 +3828,7 @@ function App() {
                               type="button"
                               className="ghost-button small"
                               onClick={() =>
-                                addComparisonRoles(
-                                  availableComparisonRoles.map((role) => role.roleid)
-                                )
+                                addComparisonRoles(availableComparisonRoles.map((role) => role.roleid))
                               }
                               disabled={availableComparisonRoles.length === 0}
                             >
@@ -3977,60 +3907,49 @@ function App() {
                               ))}
                             </select>
                           </div>
-                            </div>
-                          </div>
-                        )}
+                        </div>
+                      </div>
 
-                        {comparisonTarget === 'profiles' && (
-                          <div className="report-parameter-row">
-                            <span className="report-list-label">Profiles</span>
-                            <div className="report-dual-list">
+                      <div className="report-parameter-row">
+                        <span className="report-list-label">Tables</span>
+                        <div className="report-dual-list">
                           <div className="report-multi-select-wrap">
                             <label className="report-list-label">Available</label>
                             <input
                               className="filter-input"
                               type="search"
-                              placeholder="Search profiles"
-                              value={comparisonProfileSearchTerm}
-                              onChange={(event) => setComparisonProfileSearchTerm(event.target.value)}
+                              placeholder="Search tables"
+                              value={permissionFinderTableSearchTerm}
+                              onChange={(event) => setPermissionFinderTableSearchTerm(event.target.value)}
                             />
                             <div className="report-selection-meta">
-                              <span>{availableComparisonProfiles.length} shown</span>
+                              <span>{availablePermissionFinderTables.length} shown</span>
                             </div>
                             <button
                               type="button"
                               className="ghost-button small"
-                              onClick={() =>
-                                addComparisonProfiles(
-                                  availableComparisonProfiles.map(
-                                    (profile) => profile.fieldsecurityprofileid
-                                  )
-                                )
-                              }
-                              disabled={availableComparisonProfiles.length === 0}
+                              onClick={() => addPermissionFinderTables(availablePermissionFinderTables)}
+                              disabled={availablePermissionFinderTables.length === 0 || permissionFinderTablesLoading}
                             >
                               Add All
                             </button>
                             <select
                               className="report-multi-select"
                               multiple
-                              value={availableComparisonProfilePickIds}
+                              value={availablePermissionFinderTablePickIds}
                               onChange={(event) => {
-                                setAvailableComparisonProfilePickIds(
+                                setAvailablePermissionFinderTablePickIds(
                                   Array.from(event.target.selectedOptions).map((option) => option.value)
                                 )
                               }}
                               onDoubleClick={(event) => {
                                 const value = (event.target as HTMLOptionElement).value
-                                if (value) addComparisonProfiles([value])
+                                if (value) addPermissionFinderTables([value])
                               }}
                             >
-                              {availableComparisonProfiles.map((profile) => (
-                                <option
-                                  key={profile.fieldsecurityprofileid}
-                                  value={profile.fieldsecurityprofileid}
-                                >
-                                  {profile.name ?? 'Unnamed profile'}
+                              {availablePermissionFinderTables.map((table) => (
+                                <option key={table} value={table}>
+                                  {table}
                                 </option>
                               ))}
                             </select>
@@ -4039,16 +3958,16 @@ function App() {
                             <button
                               type="button"
                               className="ghost-button small"
-                              onClick={() => addComparisonProfiles(availableComparisonProfilePickIds)}
-                              disabled={availableComparisonProfilePickIds.length === 0}
+                              onClick={() => addPermissionFinderTables(availablePermissionFinderTablePickIds)}
+                              disabled={availablePermissionFinderTablePickIds.length === 0}
                             >
                               Choose →
                             </button>
                             <button
                               type="button"
                               className="ghost-button small"
-                              onClick={() => removeComparisonProfiles(selectedComparisonProfilePickIds)}
-                              disabled={selectedComparisonProfilePickIds.length === 0}
+                              onClick={() => removePermissionFinderTables(selectedPermissionFinderTablePickIds)}
+                              disabled={selectedPermissionFinderTablePickIds.length === 0}
                             >
                               ← Remove
                             </button>
@@ -4056,45 +3975,47 @@ function App() {
                           <div className="report-multi-select-wrap">
                             <label className="report-list-label">Selected</label>
                             <div className="report-selection-meta">
-                              <span>{selectedComparisonProfileIds.length} selected</span>
+                              <span>{selectedPermissionFinderTableIds.length} selected</span>
                             </div>
                             <button
                               type="button"
                               className="ghost-button small"
-                              onClick={() => removeComparisonProfiles(selectedComparisonProfileIds)}
-                              disabled={selectedComparisonProfileIds.length === 0}
+                              onClick={() => removePermissionFinderTables(selectedPermissionFinderTableIds)}
+                              disabled={selectedPermissionFinderTableIds.length === 0}
                             >
                               Remove All
                             </button>
                             <select
                               className="report-multi-select"
                               multiple
-                              value={selectedComparisonProfilePickIds}
+                              value={selectedPermissionFinderTablePickIds}
                               onChange={(event) => {
-                                setSelectedComparisonProfilePickIds(
+                                setSelectedPermissionFinderTablePickIds(
                                   Array.from(event.target.selectedOptions).map((option) => option.value)
                                 )
                               }}
                               onDoubleClick={(event) => {
                                 const value = (event.target as HTMLOptionElement).value
-                                if (value) removeComparisonProfiles([value])
+                                if (value) removePermissionFinderTables([value])
                               }}
                             >
-                              {selectedComparisonProfiles.map((profile) => (
-                                <option
-                                  key={profile.fieldsecurityprofileid}
-                                  value={profile.fieldsecurityprofileid}
-                                >
-                                  {profile.name ?? 'Unnamed profile'}
+                              {selectedPermissionFinderTables.map((table) => (
+                                <option key={table} value={table}>
+                                  {table}
                                 </option>
                               ))}
                             </select>
                           </div>
-                            </div>
-                          </div>
+                        </div>
+                        {permissionFinderTablesLoading && (
+                          <div className="notice">Loading available tables...</div>
                         )}
-                      </>
-                    )}
+                        {permissionFinderTablesError && (
+                          <div className="notice error">{permissionFinderTablesError}</div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -4158,7 +4079,7 @@ function App() {
                         <thead>
                           <tr>
                             <th>{reportResult.itemLabel}</th>
-                            <th>Detail</th>
+                            <th>{reportResult.title === 'Permission Finder' ? 'Permission' : 'Detail'}</th>
                             {reportResult.compareColumns
                               .slice(0, REPORT_PREVIEW_COLUMN_LIMIT)
                               .map((column) => (
@@ -4167,17 +4088,50 @@ function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {reportResult.rows.slice(0, REPORT_PREVIEW_ROW_LIMIT).map((row) => (
-                            <tr key={row.key}>
-                              <td>{row.itemName}</td>
-                              <td>{row.detail}</td>
-                              {row.values.slice(0, REPORT_PREVIEW_COLUMN_LIMIT).map((value, index) => (
-                                <td key={`${row.key}-${index}`} className="report-comparison-cell">
-                                  {value}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
+                          {(() => {
+                            const previewRows = reportResult.rows.slice(0, REPORT_PREVIEW_ROW_LIMIT)
+                            const isPermissionFinder = reportResult.title === 'Permission Finder'
+
+                            return previewRows.map((row, rowIndex) => {
+                              const isGroupStart =
+                                !isPermissionFinder ||
+                                rowIndex === 0 ||
+                                previewRows[rowIndex - 1].itemName !== row.itemName
+
+                              let rowSpan = 1
+                              if (isPermissionFinder && isGroupStart) {
+                                while (
+                                  rowIndex + rowSpan < previewRows.length &&
+                                  previewRows[rowIndex + rowSpan].itemName === row.itemName
+                                ) {
+                                  rowSpan += 1
+                                }
+                              }
+
+                              return (
+                                <tr
+                                  key={row.key}
+                                  className={
+                                    isPermissionFinder && isGroupStart && rowIndex > 0
+                                      ? 'report-group-start'
+                                      : ''
+                                  }
+                                >
+                                  {isGroupStart && <td rowSpan={rowSpan}>{row.itemName}</td>}
+                                  <td className={isPermissionFinder ? 'report-permission-label-cell' : ''}>
+                                    {row.detail}
+                                  </td>
+                                  {row.values.slice(0, REPORT_PREVIEW_COLUMN_LIMIT).map((value, index) => (
+                                    <td key={`${row.key}-${index}`} className="report-comparison-cell">
+                                      {isPermissionFinder
+                                        ? renderPermissionFinderCellValue(value, `${row.key}-${index}`)
+                                        : value}
+                                    </td>
+                                  ))}
+                                </tr>
+                              )
+                            })
+                          })()}
                         </tbody>
                       </table>
                     </div>

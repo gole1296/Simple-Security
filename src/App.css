@@ -28,6 +28,15 @@
   --color-success-bg: #e6f4ea;
   --color-success-border: rgba(47, 107, 67, 0.2);
   --color-success-ring: rgba(94, 168, 112, 0.18);
+  --color-scope-bu: #c2410c;
+  --color-scope-bu-bg: #ffedd5;
+  --color-scope-bu-border: rgba(194, 65, 12, 0.28);
+  --color-scope-parent-bu: #7c3aed;
+  --color-scope-parent-bu-bg: #f3e8ff;
+  --color-scope-parent-bu-border: rgba(124, 58, 237, 0.25);
+  --color-scope-user: #a16207;
+  --color-scope-user-bg: #fef3c7;
+  --color-scope-user-border: rgba(161, 98, 7, 0.28);
   --color-danger: #9c2e1c;
   --color-danger-bg: #fde8e3;
   --color-danger-border: rgba(156, 46, 28, 0.2);
@@ -71,6 +80,15 @@
   --color-success-bg: #11301f;
   --color-success-border: rgba(74, 222, 128, 0.3);
   --color-success-ring: rgba(74, 222, 128, 0.25);
+  --color-scope-bu: #fdba74;
+  --color-scope-bu-bg: #3f250f;
+  --color-scope-bu-border: rgba(253, 186, 116, 0.45);
+  --color-scope-parent-bu: #c4b5fd;
+  --color-scope-parent-bu-bg: #2a1f46;
+  --color-scope-parent-bu-border: rgba(196, 181, 253, 0.4);
+  --color-scope-user: #fde68a;
+  --color-scope-user-bg: #3f310f;
+  --color-scope-user-border: rgba(253, 230, 138, 0.45);
   --color-danger: #f87171;
   --color-danger-bg: #3a1a1a;
   --color-danger-border: rgba(248, 113, 113, 0.35);
@@ -772,6 +790,73 @@
 
 .report-comparison-cell {
   white-space: pre-line;
+}
+
+.report-permission-label-cell {
+  font-weight: 700;
+}
+
+.report-table tbody tr.report-group-start td {
+  border-top: 1px solid var(--color-border-strong);
+}
+
+.permission-scope-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.permission-scope-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.permission-action-label {
+  color: var(--color-text-subtle);
+  font-weight: 600;
+}
+
+.permission-scope-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.permission-scope-badge.scope-org {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
+}
+
+.permission-scope-badge.scope-bu {
+  color: var(--color-scope-bu);
+  background: var(--color-scope-bu-bg);
+  border-color: var(--color-scope-bu-border);
+}
+
+.permission-scope-badge.scope-parent-bu {
+  color: var(--color-scope-parent-bu);
+  background: var(--color-scope-parent-bu-bg);
+  border-color: var(--color-scope-parent-bu-border);
+}
+
+.permission-scope-badge.scope-user {
+  color: var(--color-scope-user);
+  background: var(--color-scope-user-bg);
+  border-color: var(--color-scope-user-border);
+}
+
+.permission-scope-badge.scope-none {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-border);
 }
 
 .list-actions {
