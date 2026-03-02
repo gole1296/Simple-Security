@@ -1,27 +1,24 @@
 # Operations Guide
 
-## Purpose
-
 This guide covers day-to-day use of the app after managed solution deployment.
 
 ## Functional areas in the app
 
-- User and Team selection
-- Role assignment and removal
-- Team membership maintenance
-- Field security profile assignment and removal
-- Action status and history review
-- Basic report/export workflows
+- System Users - List of users. Details include assigned and inherited security roles, column profiles, and assigned teams
+- Teams - List of all teams in your environment, with detailed views or users and role/security profiles
+- Security Roles - List of security roles (default and custom) with detailed views into related teams, users, and permissions
+- Field Security Profiles - List of Column Security profiles with detailed views into related teams, users, and permissions
+- Security Actions - Custom table that stores action taken in the app to associate and disassociate security records with date and user stamps
+- Reports - Configurable and exportable reports on security setup in the environment
 
 ## Standard operating flow
 
-1. Select a principal (user or team).
-2. Select target entity (role, team, or profile).
-3. Choose **associate** or **disassociate** action.
-4. Submit action.
-5. Confirm action history reflects the request and final status.
+1. Select a principal (user, team, security role, column security profile).
+2. Click on "Manage" to open action window
+3. Choose a user/team/role/profile to associate or remove from the principal
+4. Confirm associate/disassociate directly in manage window and/or through Security Actions table
 
-## What is written to audit
+## What is written to audit (ope_securityactions)
 
 Every submitted action produces a row in `ope_simplesecurityactions` that includes:
 
@@ -30,25 +27,3 @@ Every submitted action produces a row in `ope_simplesecurityactions` that includ
 - Related entity type and identifier
 - Processing status
 - Error/message details when applicable
-
-## Monitoring queue health
-
-Review action records periodically for:
-
-- Pending actions older than expected processing window
-- Repeated failures for the same principal/entity pair
-- Validation or permission errors indicating role misconfiguration
-
-## Safe operating practices
-
-- Execute sensitive removals in small batches.
-- Validate critical role removals with a second approver.
-- Avoid high-volume changes during other platform maintenance windows.
-
-## Export and evidence
-
-When required for audits:
-
-- Export action history/report output from the app.
-- Store export with release ticket or compliance record.
-- Include solution version and execution window metadata.
