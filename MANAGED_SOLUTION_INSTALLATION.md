@@ -9,11 +9,12 @@ This guide covers only two tasks:
 
 ## Import procedure
 
-1. Open Power Apps Maker portal for the target environment.
-2. Navigate to **Solutions**.
-3. Select **Import solution**.
-4. Upload the managed solution package (`.zip`).
-5. Select **Import** and wait for status **Succeeded**.
+1. Download the managed solution from: https://github.com/gole1296/Simple-Security/releases/tag/Simple-Security
+2. Open Power Apps Maker portal for the target environment.
+3. Navigate to **Solutions**.
+4. Select **Import solution**.
+5. Upload the managed solution package (`.zip`).
+6. Select **Import** and wait for status **Succeeded**.
 
 ## Open the app
 
