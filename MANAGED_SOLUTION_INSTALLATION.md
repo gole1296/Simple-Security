@@ -13,8 +13,7 @@ This guide covers only two tasks:
 2. Navigate to **Solutions**.
 3. Select **Import solution**.
 4. Upload the managed solution package (`.zip`).
-5. Complete any prompted mapping prompts.
-6. Select **Import** and wait for status **Succeeded**.
+5. Select **Import** and wait for status **Succeeded**.
 
 ## Open the app
 
