@@ -1,71 +1,57 @@
 # Simple Security
 
-Simple Security is a Power Platform app for reviewing and managing Dataverse security assignments from a single interface.
+Simple Security is a Power Platform app for reviewing and managing Dataverse security assignments from a single interface. No longer do you need to jump between the Power Platform Admin Center, Power Apps Maker portal, and the classic editor for Field Security profiles to manage and maintain your users.
+- One Custom table, used to track and audit security actions performed through the app
+- A single plugin to handle the associate and disassociate actions
+- <b>Your data never leaves your tenant, and everything is handled according to Microsoft bext practices for Power Platform security </b>
 
-It helps administrators quickly work with:
 
-- User security roles
-- Team security roles and team memberships
-- Field security profile assignments
-- Action history for security changes
+## Key features
 
-## Add screenshots/images
+- Search and filter users, teams, roles, and field security profiles
+- Manage associations (add/remove) from the app interface from the perspective of users, teams, security roles, and column security profiles
+- View direct and inherited assignment context (no more sleuthing to find inherited security permissions!)
+- Track and audit changed to security in custom table
+- Export report output to CSV
 
-Use this section to add release screenshots.
+### View and Find all Users and see their assigned and inherited roles, profiles, and teams
+![Users Tab Screenshot](./public/docs/System-Users-Overview.png)
 
-### Header image
+### View and manage security roles, teams, and column security profiles assigned to users
+![User Management screenshot](./public/docs/Manage-User-Modal.png)
 
-![App Header Screenshot](./public/docs/header-placeholder.svg)
+### View and manage security roles, users, and column security profiles assigned to teams
+![Teams Overview](./public/docs/Teams-Overview.png)
 
-### Users tab
+### Multiple reports available around security and permissions
+![Permissions Finder Report](./public/docs/Permission-Finder-Report.png)
 
-![Users Tab Screenshot](./public/docs/users-tab-placeholder.svg)
-
-### Teams tab
-
-![Teams Tab Screenshot](./public/docs/teams-tab-placeholder.svg)
-
-### Reports tab
-
-![Reports Tab Screenshot](./public/docs/reports-tab-placeholder.svg)
 
 ## What the app includes
 
 - React/TypeScript app UI for security management workflows
 - Dataverse data access layer generated for required tables
 - Custom audit table: `ope_simplesecurityactions`
-- Managed solution components required for processing association/disassociation requests
+- Custom Plugin to manager association/disassociation actions from directly in the app and through the custom audit table
 
-## Key features
 
-- Search and filter users, teams, roles, and field security profiles
-- Manage associations (add/remove) from the app interface
-- View direct and inherited assignment context
-- Track request status and outcomes in **Security Actions**
-- Export report output to CSV
-
-## Reports included
+## Included Reports
 
 ### Users by Security Role
-
 Matrix view showing role coverage by user with direct/inherited visibility.
 
 ### Users by Field Security Profile
-
 Matrix view showing profile coverage by user with direct/inherited visibility.
 
 ### Permission Finder
-
 Comparison view showing role-level table permissions side-by-side.
 
 ## Installation
-
 For managed deployment steps, use:
 
 - [MANAGED_SOLUTION_INSTALLATION.md](MANAGED_SOLUTION_INSTALLATION.md)
 
 ## Operations
-
 For day-to-day usage:
 
 - [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md)
